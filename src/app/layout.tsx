@@ -62,6 +62,20 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  /* Google Search Console ownership proof. Emitted as
+     <meta name="google-site-verification" content="..." />.
+
+     Written via the `verification` field rather than a hand-placed
+     <meta> in the markup so Next owns the whole <head> — a manual tag
+     inside the body of a layout is not guaranteed to be hoisted.
+
+     Not a secret: it proves control of THIS site to Google and grants
+     nothing to whoever reads it. Must stay in place permanently —
+     Google re-checks periodically and un-verifies the property if the
+     tag disappears. */
+  verification: {
+    google: "siThn7ixNi1FcF1aYfjTtPF0k5uTz5zh4gE27Vcj7T8",
+  },
 };
 
 export default function RootLayout({

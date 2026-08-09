@@ -41,11 +41,14 @@ export const metadata: Metadata = {
     "long-term memory",
     "developer tools",
   ],
-  alternates: { canonical: "/" },
+  /* NO `alternates.canonical` here, and no `openGraph.url`. Both are
+     INHERITED by every child route, so setting them at the root made
+     /privacy, /terms and /contact each declare the homepage as their
+     canonical — which tells search engines those pages are duplicates
+     and to index the homepage instead. Each route sets its own. */
   openGraph: {
     type: "website",
     siteName: "Brainfeather",
-    url: SITE,
     title: TITLE,
     description: DESCRIPTION,
     locale: "en_GB",

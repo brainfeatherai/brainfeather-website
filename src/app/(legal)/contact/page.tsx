@@ -6,6 +6,8 @@ import { CONTACT_EMAIL, mailto } from "@/lib/site";
 export const metadata: Metadata = {
   /* Suffix omitted — the root layout's title template appends it. */
   title: "Contact",
+  alternates: { canonical: "/contact" },
+  openGraph: { url: "/contact" },
   description:
     "Get in touch with Brainfeather: support, security reports, privacy requests, and press.",
 };

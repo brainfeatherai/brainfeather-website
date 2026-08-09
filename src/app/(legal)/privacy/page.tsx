@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   /* No "— Brainfeather" suffix: the root layout's title template adds
      it, so spelling it out here would render it twice. */
   title: "Privacy Policy",
+  alternates: { canonical: "/privacy" },
+  openGraph: { url: "/privacy" },
   description:
     "What Brainfeather collects, what it stores from your coding sessions, how long it keeps it, and how to get it deleted.",
 };

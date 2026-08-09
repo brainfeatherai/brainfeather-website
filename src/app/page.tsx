@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import FlowDiagram from "@/components/FlowDiagram";
 import ChatCompare from "@/components/ChatCompare";
@@ -6,6 +7,15 @@ import PillarCards from "@/components/PillarCards";
 import SiteFooter from "@/components/SiteFooter";
 import WaitlistForm from "@/components/WaitlistForm";
 import Reveal from "@/components/Reveal";
+import StructuredData from "@/components/StructuredData";
+
+/* Own canonical + og:url, rather than inheriting from the root layout:
+   a root-level canonical is inherited by EVERY child, which made the
+   legal routes all point here and read as duplicates. */
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: { url: "/" },
+};
 
 /* ── dotted glyph, the recurring marker motif ── */
 function DotGlyph({ variant = "ring" }: { variant?: "ring" | "grid" | "fade" }) {
@@ -50,6 +60,7 @@ function CornerTicks() {
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col bg-forest-deep">
+      <StructuredData />
       <SiteNav />
 
       {/* ══════════════ HERO ══════════════ */}

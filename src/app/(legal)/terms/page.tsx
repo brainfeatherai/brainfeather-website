@@ -15,6 +15,8 @@ import {
 export const metadata: Metadata = {
   /* Suffix omitted — the root layout's title template appends it. */
   title: "Terms of Service",
+  alternates: { canonical: "/terms" },
+  openGraph: { url: "/terms" },
   description:
     "The terms that govern your use of Brainfeather, including acceptable use, who owns what, and the limits of an early-development service.",
 };

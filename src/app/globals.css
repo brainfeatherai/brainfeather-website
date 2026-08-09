@@ -1,0 +1,486 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand palette — forest green + warm cream */
+  --forest: #14342b;
+  --forest-deep: #0d2620;
+  --emerald: #2f7a5c;
+  --mint: #9fd8b8;
+  --paper: #fbf9ef;
+  --paper-dim: #f2eee0;
+
+  --background: var(--paper);
+  --foreground: var(--forest);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-forest: var(--forest);
+  --color-forest-deep: var(--forest-deep);
+  --color-emerald: var(--emerald);
+  --color-mint: var(--mint);
+  --color-paper: var(--paper);
+  --color-paper-dim: var(--paper-dim);
+  --font-sans: var(--font-outfit);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* smooth in-page jumps, and keep anchor targets clear of the fixed nav */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background: var(--forest-deep);
+  color: var(--foreground);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Hero: forest → mint wash behind fluted glass ──────────────────
+   Split into separate layers so each can animate on its own.
+
+   Everything below animates ONLY `transform` and `opacity`, which the
+   compositor handles without repainting. Animating the gradients
+   themselves (background-position, or the stop percentages) would
+   repaint a full-viewport element every frame — the usual reason an
+   animated hero gradient tanks a scroll.
+
+   Paint order, bottom to top:
+     .hero-wash    the forest→mint vertical base
+     .hero-bloom   the big glow rising from the bottom edge
+     .hero-bloom-alt  a second, cooler glow that wanders
+     .flute        the vertical glass ribs
+     .hero-sweep   a specular highlight crossing the ribs
+     .grain::after noise, so none of it bands                      */
+.hero-wash {
+  background: linear-gradient(
+    180deg,
+    var(--forest) 0%,
+    #1b4a3a 30%,
+    var(--emerald) 62%,
+    #6fb894 100%
+  );
+}
+
+/* The bloom, lifted out of `.hero-wash` into its own layer. Origin is
+   the bottom centre — where the gradient is anchored — so scaling
+   grows the glow upward instead of sliding it. */
+.hero-bloom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  background: radial-gradient(
+    120% 70% at 50% 108%,
+    #f7f4dc 0%,
+    #d9e8c4 18%,
+    var(--mint) 34%,
+    var(--emerald) 58%,
+    transparent 78%
+  );
+}
+
+/* Second glow, offset left and much fainter. Its own slower period
+   means the two never peak together, so the light appears to wander
+   rather than pulse on a beat. */
+.hero-bloom-alt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.32;
+  transform-origin: 50% 100%;
+  background: radial-gradient(
+    80% 55% at 34% 104%,
+    var(--mint) 0%,
+    var(--emerald) 44%,
+    transparent 74%
+  );
+}
+
+/* Breathing: 5% of scale and a little opacity. Enough to feel alive at
+   the edge of vision, not enough to notice while reading. */
+@keyframes bloomBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+.bloom-breathe {
+  animation: bloomBreathe 11s ease-in-out infinite;
+}
+
+@keyframes bloomWander {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 0, 0) scale(1.09);
+  }
+}
+.bloom-wander {
+  animation: bloomWander 17s ease-in-out infinite;
+}
+
+/* vertical fluted-glass ribs.
+   Positioned here rather than with Tailwind utilities because of the
+   negative horizontal inset: the ribs slide sideways, and a box that
+   stopped at the viewport edge would expose a 28px gap mid-animation. */
+.flute {
+  position: absolute;
+  inset: 0 -28px;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.14) 0px,
+    rgba(255, 255, 255, 0.14) 1px,
+    rgba(255, 255, 255, 0.05) 2px,
+    rgba(0, 0, 0, 0.05) 14px,
+    rgba(0, 0, 0, 0.09) 22px,
+    rgba(255, 255, 255, 0.05) 26px,
+    transparent 28px
+  );
+  background-size: 28px 100%;
+}
+
+/* Drifts exactly ONE rib width, so the loop is seamless — the pattern
+   repeats every 28px, meaning the end frame is pixel-identical to the
+   start. `linear` for the same reason: any easing would show up as a
+   hitch at the seam. */
+@keyframes fluteShimmer {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(28px, 0, 0);
+  }
+}
+.flute-shimmer {
+  animation: fluteShimmer 14s linear infinite;
+}
+
+/* A soft highlight passing over the glass, the way light crosses a
+   ribbed surface. `screen` lifts the ribs it passes without washing
+   out the type. Base opacity 0 so it stays invisible unless the
+   animation is running — which is also what reduced-motion wants. */
+.hero-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.05) 46%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 54%,
+    transparent 62%
+  );
+}
+
+@keyframes heroSweep {
+  0% {
+    transform: translate3d(-62%, 0, 0);
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(62%, 0, 0);
+    opacity: 0;
+  }
+}
+.hero-sweep-run {
+  animation: heroSweep 19s ease-in-out infinite;
+}
+
+/* soft grain so the gradient never bands */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
+}
+
+/* feather: blue watercolor → teal-green */
+.feather-tint {
+  filter: hue-rotate(-58deg) saturate(1.18) contrast(1.04);
+}
+
+.hairline {
+  border-color: color-mix(in oklab, var(--forest) 12%, transparent);
+}
+
+/* ── section rule ──────────────────────────────────────────────
+   A flat 1px border edge-to-edge is the thing that reads cheap: it
+   ends abruptly against the page margins. This fades out at both
+   ends, so it reads as a drawn rule rather than a table border. */
+.rule-t {
+  position: relative;
+}
+.rule-t::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--forest) 15%, transparent) 14%,
+    color-mix(in oklab, var(--forest) 15%, transparent) 86%,
+    transparent 100%
+  );
+}
+
+/* Same rule, broken in the middle for the feather mark. The gap is
+   sized to the ornament so the two halves meet it cleanly. */
+.rule-mark::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--forest) 15%, transparent) 14%,
+    color-mix(in oklab, var(--forest) 15%, transparent) calc(50% - 26px),
+    transparent calc(50% - 24px),
+    transparent calc(50% + 24px),
+    color-mix(in oklab, var(--forest) 15%, transparent) calc(50% + 26px),
+    color-mix(in oklab, var(--forest) 15%, transparent) 86%,
+    transparent 100%
+  );
+}
+
+/* ── footer: the reclining feather ────────────────────────────────
+   The closing gesture — one big feather lying down at the end of the
+   page. `feather.png` is portrait (382×653), so it's rotated a quarter
+   turn; because `rotate` is a transform it doesn't affect layout, the
+   wrapper has to reserve the vertical space itself.
+
+   The mask is authored in the element's OWN coordinate space, which is
+   evaluated before the transform — so this 180deg (top-to-bottom)
+   gradient ends up running along the feather's length once it's lying
+   down, dissolving both tips instead of ending on a hard edge. */
+.feather-sleep {
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    transparent 0%,
+    #000 20%,
+    #000 80%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(180deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
+}
+
+/* A slow list, as if it were breathing in its sleep. Distinct from
+   `.drift` (the hero feather) — slower and shallower, since this one
+   is much larger and the same amplitude would read as sliding.
+
+   −48°, not −90°: a quarter turn lies the feather dead flat, which
+   reads as a horizontal rule. The diagonal is what makes it look
+   dropped rather than aligned — plume resting upper-left, quill
+   curving away to the lower-right. */
+/* The feather in `feather.png` is ALREADY diagonal — measured by PCA
+   over the opaque pixels, its long axis sits at −55.7° in the source
+   (plume upper-right, quill lower-left). Any rotation here compounds
+   onto that, it doesn't set it. A plain −90° quarter turn left the
+   feather at ~34°, still visibly propped up.
+
+   Lying flat needs  −55.7 + R ≡ ~4° (mod 180). Both R = −119° and
+   R = +61° satisfy that — they're 180° apart, so the AXIS is identical
+   and either way it lies flat. What differs is the end-for-end
+   orientation: −119° puts the plume left, +61° flips it point-for-point
+   so the plume rests right and the quill trails off to the left, with
+   the vane's curve inverted. +61° is the upside-down one. */
+@keyframes doze {
+  0%,
+  100% {
+    transform: rotate(59.8deg) translateY(0);
+  }
+  50% {
+    transform: rotate(62.2deg) translateY(-9px);
+  }
+}
+.doze {
+  animation: doze 16s ease-in-out infinite;
+}
+
+/* ── hero: load-in ────────────────────────────────────────────────
+   The hero is above the fold, so a scroll observer would never fire
+   for it. This is a pure-CSS entrance instead: no JS, so it runs in
+   the server HTML on first paint.
+
+   Base style is the FINISHED state (opacity 1, no offset) and the
+   keyframes move away from it, so `animation: none` under
+   reduced-motion lands on visible text rather than a blank hero. */
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+.rise {
+  animation: riseIn 0.9s cubic-bezier(0.22, 0.7, 0.28, 1) both;
+}
+/* Stagger: eyebrow, headline, sub-paragraph, in reading order. */
+.rise-1 {
+  animation-delay: 0.05s;
+}
+.rise-2 {
+  animation-delay: 0.18s;
+}
+.rise-3 {
+  animation-delay: 0.34s;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(-2.2deg);
+  }
+}
+.drift {
+  animation: drift 9s ease-in-out infinite;
+}
+
+/* ── diagram: packets travelling along the connector wires ── */
+@keyframes flow {
+  0% {
+    stroke-dashoffset: 340;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+.flow {
+  stroke-dasharray: 26 314;
+  animation: flow 3.2s linear infinite;
+}
+/* recall direction: packet travels the path backwards */
+.flow-rev {
+  animation-direction: reverse;
+}
+
+/* ── diagram: client slabs breathing ── */
+@keyframes lift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.lift {
+  animation: lift 5.5s ease-in-out infinite;
+}
+
+/* ── diagram: the extracted fact rising out of the store ── */
+@keyframes liftCube {
+  0%,
+  100% {
+    transform: translateY(6px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.lift-cube {
+  animation: liftCube 4.2s ease-in-out infinite;
+}
+
+/* ── chat UI: input caret + live-dot pulse ── */
+@keyframes caret {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  52%,
+  100% {
+    opacity: 0;
+  }
+}
+.caret {
+  animation: caret 1.15s step-end infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse {
+  animation: pulse 2.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift,
+  .flow,
+  .lift,
+  .lift-cube,
+  .caret,
+  .pulse,
+  .doze,
+  .bloom-breathe,
+  .bloom-wander,
+  .flute-shimmer,
+  .hero-sweep-run,
+  .rise {
+    animation: none;
+  }
+  /* The four hero layers need no resting-state restatement, unlike
+     `.doze`: their keyframes only ever move away from the base style,
+     so removing the animation lands each one on its static value.
+     `.hero-sweep` in particular has base `opacity: 0`, so the light
+     sweep simply doesn't exist here — which is the right answer. */
+  /* `.doze` carries the whole rotation inside its keyframes, so killing
+     the animation alone would leave the feather unrotated. Restate the
+     resting angle — and keep this in sync with the keyframes above, or
+     reduced-motion users see a differently-oriented feather. */
+  .doze {
+    transform: rotate(61deg);
+  }
+  .flow {
+    stroke-dasharray: none;
+    opacity: 0.55;
+  }
+}

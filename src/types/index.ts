@@ -1,0 +1,98 @@
+export interface User {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  email: string;
+  name: string;
+  plan: 'free' | 'pro' | 'team' | 'enterprise';
+  memoriesCount: number;
+  lastActiveAt: string;
+}
+
+export interface Memory {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  userId: string;
+  source: 'manual' | 'chatgpt' | 'claude' | 'cursor' | 'slack' | 'chrome';
+  title: string;
+  content: string;
+  category: 'preference' | 'context' | 'decision' | 'code' | 'project' | 'team';
+  tags: string[];
+  embedding?: number[];
+  metadata?: Record<string, any>;
+}
+
+export interface ContextRule {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  userId: string;
+  name: string;
+  condition: string;
+  context: string;
+  priority: 'low' | 'medium' | 'high';
+  enabled: boolean;
+}
+
+export interface Team {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  name: string;
+  ownerId: string;
+  plan: 'team' | 'enterprise';
+  membersCount: number;
+}
+
+export interface TeamMember {
+  $id: string;
+  $createdAt: string;
+  teamId: string;
+  userId: string;
+  role: 'owner' | 'admin' | 'member';
+  user?: User;
+}
+
+export interface ApiKey {
+  $id: string;
+  $createdAt: string;
+  userId: string;
+  name: string;
+  key: string;
+  lastUsedAt?: string;
+}
+
+export interface Decision {
+  $id: string;
+  $createdAt: string;
+  teamId: string;
+  title: string;
+  context: string;
+  outcome: string;
+  participants: string[];
+  tags: string[];
+}
+
+export interface Pattern {
+  $id: string;
+  $createdAt: string;
+  userId: string;
+  type: 'repeated_task' | 'common_question' | 'workflow' | 'preference';
+  description: string;
+  frequency: number;
+  lastSeenAt: string;
+  suggestion?: string;
+}
+
+export interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}

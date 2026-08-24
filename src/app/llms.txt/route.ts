@@ -30,8 +30,10 @@ wiped when the session closes. Brainfeather is the disk beside it.
 
 ## Status
 
-In early development. Not yet generally available — there is no public API,
-SDK or installable package at the time of writing. Access is by waitlist.
+In early development, and free while it is. Access is invite-only: request one
+from the waitlist on the home page. Invited testers sign in, generate an API key,
+and connect it to an MCP-compatible editor. There is no installable package on
+npm at the time of writing.
 
 ## What it does
 
@@ -48,8 +50,9 @@ SDK or installable package at the time of writing. Access is by waitlist.
 
 ## Pages
 
-- [Home](${SITE_URL}/): what it is, how it works, and the waitlist.
-- [Contact](${SITE_URL}/contact): support, early access, security reports, press.
+- [Home](${SITE_URL}/): what it is and how it works.
+- [Sign in](${SITE_URL}/login): create an account or sign in.
+- [Contact](${SITE_URL}/contact): support, security reports, press.
 - [Privacy Policy](${SITE_URL}/privacy): what is collected and stored, and for how long.
 - [Terms of Service](${SITE_URL}/terms): the terms of use.
 

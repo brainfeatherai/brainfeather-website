@@ -14,13 +14,36 @@ export interface Memory {
   $createdAt: string;
   $updatedAt: string;
   userId: string;
-  source: 'manual' | 'chatgpt' | 'claude' | 'cursor' | 'slack' | 'chrome';
+  /* Mirrors the `memories.source` enum in Appwrite. Keep this list, the
+     MCP server's SOURCES, and the API's validate.ts identical — the
+     database is the only one that enforces it, so any value the others
+     accept but it rejects becomes a 500 instead of a 400.
+
+     The last three were added to the Appwrite enum on 2026-08-24; before
+     that both client lists advertised them while the schema refused
+     them, which is exactly how that 500 showed up. */
+  source:
+    | 'manual'
+    | 'chatgpt'
+    | 'claude'
+    | 'cursor'
+    | 'slack'
+    | 'chrome'
+    | 'opencode'
+    | 'codex'
+    | 'antigravity';
   title: string;
   content: string;
   category: 'preference' | 'context' | 'decision' | 'code' | 'project' | 'team';
   tags: string[];
+  /* Temporal validity. The MCP server flips a fact to 'invalid' and records
+     what replaced it, rather than deleting it — so anything reading memories
+     for display MUST filter on status or it will show retracted facts. */
+  status?: 'active' | 'invalid';
+  supersededBy?: string;
+  projectId?: string;
   embedding?: number[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ContextRule {

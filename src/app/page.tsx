@@ -117,6 +117,11 @@ export default function Home() {
               context that outlives the chat window.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              {/* Waitlist, not /login. Access is invite-only while
+                  testing, so sending an uninvited visitor to a sign-up
+                  form would be sending most of them to a dead end.
+                  Testers reach /login from the nav. Stays an anchor
+                  because it scrolls within this page. */}
               <a
                 href="#waitlist"
                 className="flex items-center gap-2.5 rounded-full bg-forest py-2 pl-2 pr-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03]"
@@ -243,18 +248,26 @@ export default function Home() {
           </div>
 
           {/* ── closing ──
-              h2, not h3: this is a top-level section heading, sibling
-              to the ones above it, and an h3 here broke the outline.
-              The CTA is a mailto until the waitlist form exists — a
-              dead `href="#"` was worse than an inbox that works. */}
+              h2, not h3: this is a top-level section heading, sibling to
+              the ones above it, and an h3 here broke the outline.
+
+              The waitlist is the PUBLIC path and stays so while access is
+              invite-only: sending an uninvited visitor to /login would be
+              sending most of them to a form they cannot complete. Testers
+              reach /login from the nav instead.
+
+              The form now writes to the Appwrite `waitlist` collection.
+              It previously posted to a Google Apps Script webhook gated
+              on WAITLIST_WEBHOOK_URL, which was never set in production —
+              so every address submitted here was silently dropped. */}
           <div id="waitlist" className="rule-t mt-24 pt-16 text-center">
             <Reveal>
               <h2 className="text-[clamp(1.6rem,3.6vw,2.6rem)] font-light leading-[1.14] tracking-[-0.025em] text-forest">
                 Stop re-explaining your project.
               </h2>
               <p className="mx-auto mt-4 max-w-sm text-[13.5px] leading-[1.7] text-forest/70">
-                Brainfeather is in early development. Leave your email and help shape what it
-                remembers.
+                Brainfeather is in early development and onboarding testers. Leave your
+                email and we&apos;ll send you an invite.
               </p>
 
               <WaitlistForm />

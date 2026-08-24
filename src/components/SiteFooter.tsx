@@ -54,7 +54,7 @@ const COLUMNS = [
     links: [
       { label: "How it works", href: "/#how" },
       { label: "Integrations", href: "/#how" },
-      { label: "Waitlist", href: "/#waitlist" },
+      { label: "Sign in", href: "/login" },
     ],
   },
   {
@@ -170,11 +170,15 @@ export default function SiteFooter() {
               shouldn't compete with the one conversion point. */}
           <SocialLinks />
 
+          {/* The public conversion point, so /#waitlist rather than
+              /login — access is invite-only and most visitors cannot
+              complete a sign-up. The "Sign in" link in the columns above
+              is the path for invited testers. */}
           <Link
             href="/#waitlist"
             className="group flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-mint/80 transition-colors hover:text-mint"
           >
-            Join the waitlist
+            Request access
             <span
               className="transition-transform duration-300 group-hover:translate-x-0.5"
               aria-hidden="true"

@@ -1,5 +1,5 @@
-import { account, databases, client } from '@/lib/appwrite';
-import { ID, Query, Permission, Role } from 'appwrite';
+import { account, databases } from '@/lib/appwrite';
+import { ID, Query, OAuthProvider } from 'appwrite';
 import type { User, Memory, ContextRule, Team, TeamMember, ApiKey, Decision, Pattern } from '@/types';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
@@ -46,6 +46,68 @@ export const authService = {
     }
   },
 
+  /* Full-page redirect to the provider, so nothing after this runs.
+
+     createOAuth2Token, NOT createOAuth2Session. The session flow has
+     Appwrite set a session cookie on ITS OWN domain
+     (sgp.cloud.appwrite.io) while the app runs somewhere else. The
+     browser sees a third-party cookie and drops it, so the OAuth round
+     trip finishes, redirects back, and the user is still signed out —
+     silently, with no error anywhere.
+
+     The token flow returns userId + secret on the success URL instead.
+     The app exchanges them for a session from its own origin, which
+     lets the SDK fall back to localStorage (X-Fallback-Cookies) when
+     the cookie is refused. Works regardless of cookie policy.
+
+     Object-argument form: the positional overload is deprecated here.
+
+     No `scopes` passed — Google's default grant already carries email
+     and profile, and anything beyond those two non-sensitive scopes
+     drags the OAuth app into Google's verification review. */
+  signInWithOAuth(provider: OAuthProvider, origin: string) {
+    return account.createOAuth2Token({
+      provider,
+      success: `${origin}/auth/callback`,
+      failure: `${origin}/login?error=oauth`,
+    });
+  },
+
+  /* Second half of the token flow: trade the one-time secret for a real
+     session. Single-use and short-lived, so this runs immediately on the
+     callback route. */
+  async completeOAuth(userId: string, secret: string) {
+    return await account.createSession({ userId, secret });
+  },
+
+  /* Idempotent profile row.
+
+     createEmailPassword writes this document itself, but an OAuth signup
+     never touches that path — Appwrite creates the auth account directly.
+     Without this, a Google user has a session and no `users` row, so
+     anything reading plan or memoriesCount gets a 404 for them.
+
+     Caller treats a throw as non-fatal: a missing profile degrades the
+     dashboard, but it should not block a valid session from signing in. */
+  async ensureProfile(user: { $id: string; email: string; name: string }) {
+    try {
+      return await databases.getDocument(DATABASE_ID, USERS_COLLECTION, user.$id);
+    } catch {
+      return await databases.createDocument(
+        DATABASE_ID,
+        USERS_COLLECTION,
+        user.$id,
+        {
+          email: user.email,
+          name: user.name,
+          plan: 'free',
+          memoriesCount: 0,
+          lastActiveAt: new Date().toISOString(),
+        }
+      );
+    }
+  },
+
   async logout() {
     return await account.deleteSession('current');
   },
@@ -82,6 +144,20 @@ export const memoryService = {
       ]
     );
     return response;
+  },
+
+  /* Only facts that still hold.
+     `list` above returns superseded rows too, which is right for an audit
+     view and wrong for anything user-facing: the MCP server retracts a fact
+     by setting status 'invalid' rather than deleting it, so an unfiltered
+     read shows a decision next to the decision that replaced it. */
+  async listActive(userId: string, limit = 50) {
+    return await databases.listDocuments(DATABASE_ID, MEMORIES_COLLECTION, [
+      Query.equal('userId', userId),
+      Query.equal('status', 'active'),
+      Query.orderDesc('$createdAt'),
+      Query.limit(limit),
+    ]);
   },
 
   async getById(id: string) {
@@ -248,7 +324,16 @@ export const teamMemberService = {
 // API Key services
 export const apiKeyService = {
   async create(userId: string, name: string) {
-    const key = `bf_${ID.unique()}`;
+    // Prefix must be bf_live_ / bf_test_ — the MCP server rejects any
+    // other shape before it makes a single request.
+    //
+    // The body is crypto-random, not ID.unique(): ID.unique() is
+    // timestamp-derived, so two keys minted in the same moment are
+    // adjacent and the value is guessable from the creation time.
+    const entropy = new Uint8Array(16);
+    crypto.getRandomValues(entropy);
+    const body = Array.from(entropy, (b) => b.toString(16).padStart(2, '0')).join('');
+    const key = `bf_live_${body}`;
     return await databases.createDocument(
       DATABASE_ID,
       API_KEYS_COLLECTION,

@@ -3,13 +3,20 @@
 /* ────────────────────────────────────────────────────────────────
    Waitlist capture.
 
-   Flow: form → this Server Action → a Google Apps Script Web App →
-   a row in your Google Sheet. See `scripts/waitlist-sheet.gs` for the
-   script to deploy, and set WAITLIST_WEBHOOK_URL to its /exec URL.
+   Flow: form → this Server Action → a row in the Appwrite `waitlist`
+   collection.
 
-   The webhook URL is a SERVER-ONLY env var — deliberately not
-   NEXT_PUBLIC_, or it would ship to the browser and anyone could
-   write rows into your sheet directly.
+   Previously posted to a Google Apps Script webhook gated on
+   WAITLIST_WEBHOOK_URL. That variable was never set in production, so
+   every submission on the live site hit the not-configured branch and
+   was DROPPED — while an Appwrite `waitlist` collection already existed,
+   with matching attributes, and nothing writing to it.
+
+   Writes through the ADMIN client, so it works regardless of collection
+   permissions. That matters: the public waitlist keeps working even
+   while user-session access is still locked down.
+
+   `scripts/waitlist-sheet.gs` is unused as of this change.
 
    Server Actions are reachable by direct POST, not only through this
    site's UI, so everything below is validated as untrusted input.
@@ -50,69 +57,66 @@ export async function joinWaitlist(
     return { status: "error", message: "That doesn't look like an email address." };
   }
 
-  const endpoint = process.env.WAITLIST_WEBHOOK_URL;
+  /* Writes to the Appwrite `waitlist` collection.
 
-  /* Not configured — say so instead of showing a success message for
-     something that was never recorded. The address is dropped here;
-     claiming otherwise would be a lie to both of you. */
-  if (!endpoint) {
-    console.error(
-      "[waitlist] WAITLIST_WEBHOOK_URL is not set — submission was NOT recorded.",
-    );
-    return {
-      status: "error",
-      /* Kept short because the form appends its own "Or email us."
-         link — spelling out the mailto here read as a duplicate. */
-      message: "Sign-ups aren't live yet.",
-    };
-  }
+     Was a POST to a Google Apps Script webhook, gated on
+     WAITLIST_WEBHOOK_URL. That variable was never set in production, so
+     the branch above returned "Sign-ups aren't live yet" and DROPPED the
+     address — every submission on the live site, silently. Meanwhile a
+     `waitlist` collection already existed in Appwrite with exactly the
+     right attributes (email, company, source, submittedAt) and nothing
+     writing to it.
 
-  const payload = {
-    email,
-    /* Only sent when configured. The Apps Script rejects a mismatch,
-       so omitting this when the script HAS a secret set would fail
-       every submission. */
-    ...(process.env.WAITLIST_WEBHOOK_SECRET
-      ? { secret: process.env.WAITLIST_WEBHOOK_SECRET }
-      : {}),
-    /* Two forms of the same instant: one sortable and unambiguous for
-       machines, one readable in the sheet without a formula. */
-    submittedAt: new Date().toISOString(),
-    submittedAtReadable: new Date().toLocaleString("en-GB", {
-      timeZone: "UTC",
-      dateStyle: "medium",
-      timeStyle: "short",
-    }),
-    source: String(formData.get("source") ?? "website").slice(0, 60),
-  };
+     Appwrite is also the better target now the dashboard exists: one
+     store, visible in the same console as everything else, and no second
+     service to keep alive. `scripts/waitlist-sheet.gs` is unused as of
+     this change.
 
+     Imported DYNAMICALLY, not at module scope. appwrite-admin throws on
+     import when APPWRITE_API_KEY is absent, and this module is reached
+     from the landing page — a top-level import would take the whole
+     homepage down over a missing env var instead of just failing this
+     one form. */
   try {
-    /* Apps Script answers a POST with a 302 to script.googleusercontent.com;
-       fetch follows that by default, which is what we want. */
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10_000),
-      cache: "no-store",
-    });
+    const { adminDb, DATABASE_ID, COLLECTIONS } = await import(
+      "@/lib/server/appwrite-admin"
+    );
+    const { ID, Query } = await import("node-appwrite");
 
-    if (!res.ok) {
-      /* Log the status for us; never surface the endpoint or its
-         response to the browser. */
-      console.error(`[waitlist] webhook returned ${res.status}`);
-      return {
-        status: "error",
-        message: "Something went wrong saving that. Try again in a moment?",
-      };
+    /* Idempotent on email. Without this a double-click, or someone
+       signing up twice weeks apart, produces duplicate rows — and the
+       count becomes something you cannot trust. Reports success either
+       way: from the visitor's side "you are on the list" is true. */
+    const existing = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.waitlist, [
+      Query.equal("email", email),
+      Query.limit(1),
+    ]);
+
+    if (existing.documents.length) {
+      return { status: "ok", message: "You're already on the list." };
     }
+
+    /* No `company` written, despite the collection having the attribute
+       and the form having the field. That input is a HONEYPOT —
+       tabIndex={-1}, off-screen, invisible to humans — so a non-empty
+       value means a bot, and the check above has already returned a fake
+       success and dropped it. By this line it is always empty. Persisting
+       it would imply we collect company data when we never receive any. */
+    await adminDb.createDocument(DATABASE_ID, COLLECTIONS.waitlist, ID.unique(), {
+      email,
+      source: String(formData.get("source") ?? "website").slice(0, 64),
+      submittedAt: new Date().toISOString(),
+    });
 
     return { status: "ok", message: "You're on the list. We'll be in touch." };
   } catch (err) {
-    console.error("[waitlist] webhook request failed:", err);
+    /* Logged server-side with detail; the browser gets a sentence it can
+       act on. Never surface the Appwrite error — it names collections and
+       occasionally echoes configuration. */
+    console.error("[waitlist] could not record submission:", err);
     return {
       status: "error",
-      message: "Couldn't reach the server. Try again in a moment?",
+      message: "Couldn't save that. Try again in a moment?",
     };
   }
 }

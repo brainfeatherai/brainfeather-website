@@ -69,7 +69,7 @@ export default function StructuredData() {
         publisher: { "@id": `${SITE_URL}/#organization` },
         /* Honest about status: the product is pre-release, so this says
            so rather than implying general availability. */
-        releaseNotes: "In early development. Join the waitlist for access.",
+        releaseNotes: "In early development. Free while in beta.",
         featureList: [
           "Long-term memory for AI coding agents",
           "Background fact capture with no added latency",

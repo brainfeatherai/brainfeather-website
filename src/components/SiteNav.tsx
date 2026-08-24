@@ -93,14 +93,17 @@ export default function SiteNav() {
             ))}
           </ul>
 
+          {/* Straight to /login, not the old /#waitlist anchor. Signup
+              exists, so scrolling someone to an email form was a longer
+              path to a worse outcome. */}
           <Link
-            href="/#waitlist"
+            href="/login"
             className="group flex shrink-0 items-center gap-2.5 rounded-full bg-paper py-1.5 pl-1.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.09em] text-forest transition-transform hover:scale-[1.03]"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-forest text-mint">
               <DotRing className="h-[15px] w-[15px] transition-transform duration-500 group-hover:rotate-45" />
             </span>
-            Early access
+            Sign in
           </Link>
         </div>
       </nav>

@@ -13,6 +13,22 @@
   --foreground: var(--forest);
 }
 
+/* ── Dark mode ─────────────────────────────────────────────────
+   Toggled via a `dark` class on <html>. Keeps the same palette
+   names so every Tailwind utility that references them (text-forest,
+   bg-paper, etc.) recolours automatically. */
+html.dark {
+  --forest: #e8ede9;
+  --forest-deep: #0d1b16;
+  --emerald: #5bb98c;
+  --mint: #3a7d5e;
+  --paper: #0d1b16;
+  --paper-dim: #132a21;
+
+  --background: #0d1b16;
+  --foreground: #e8ede9;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -39,7 +55,7 @@ html {
 }
 
 body {
-  background: var(--forest-deep);
+  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-outfit), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -232,6 +248,9 @@ body {
 .hairline {
   border-color: color-mix(in oklab, var(--forest) 12%, transparent);
 }
+html.dark .hairline {
+  border-color: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
 
 /* ── section rule ──────────────────────────────────────────────
    A flat 1px border edge-to-edge is the thing that reads cheap: it
@@ -249,8 +268,8 @@ body {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    color-mix(in oklab, var(--forest) 15%, transparent) 14%,
-    color-mix(in oklab, var(--forest) 15%, transparent) 86%,
+    color-mix(in oklab, var(--foreground) 15%, transparent) 14%,
+    color-mix(in oklab, var(--foreground) 15%, transparent) 86%,
     transparent 100%
   );
 }

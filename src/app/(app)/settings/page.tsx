@@ -10,7 +10,7 @@
    guarantee. Masking only limits shoulder-surfing and screenshots.
    ──────────────────────────────────────────────────────────────── */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth, useAuth } from "@/components/AuthProvider";
 import { authService, apiKeyService } from "@/services/appwrite";
@@ -21,6 +21,59 @@ const FIELD =
 
 const PILL =
   "hairline rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50";
+
+/* ── Theme toggle ────────────────────────────────────────────── */
+function useTheme() {
+  const [theme, setThemeState] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const stored = localStorage.getItem("bf-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return stored === "dark" || (!stored && prefersDark) ? "dark" : "light";
+  });
+
+  const toggle = useCallback(() => {
+    setThemeState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      localStorage.setItem("bf-theme", next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+      return next;
+    });
+  }, []);
+
+  return { theme, toggle };
+}
+
+function ThemeSection() {
+  const { theme, toggle } = useTheme();
+
+  return (
+    <section className="hairline mb-11 rounded-xl border bg-paper p-4 sm:p-5">
+      <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-forest">
+        Appearance
+      </h2>
+      <p className="mt-1 text-[13px] text-forest/60">
+        Switch between light and dark mode.
+      </p>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggle}
+          className="relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border border-forest/15 bg-forest/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-forest shadow-sm transition-transform ${
+              theme === "dark" ? "translate-x-7" : "translate-x-1"
+            }`}
+          />
+        </button>
+        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-forest/50">
+          {theme === "dark" ? "Dark mode" : "Light mode"}
+        </span>
+      </div>
+    </section>
+  );
+}
 
 function mcpConfig(token: string) {
   return JSON.stringify(
@@ -130,6 +183,8 @@ function Settings() {
 
   return (
     <AppShell title="Settings" intro="Account, keys and editor setup.">
+      <ThemeSection />
+
       <section className="hairline mb-11 rounded-xl border bg-paper p-4 sm:p-5">
         <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-forest">
           Account

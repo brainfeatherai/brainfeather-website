@@ -13,11 +13,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { Brain, LogOut, Network, Settings as SettingsIcon } from "lucide-react";
+import { Brain, CircleDot, LogOut, Network, Settings as SettingsIcon } from "lucide-react";
 import { useAuth } from "./AuthProvider";
 
 const NAV = [
   { href: "/dashboard", label: "Memories", icon: Brain },
+  { href: "/nodes", label: "Nodes", icon: CircleDot },
   { href: "/graph", label: "Graph", icon: Network },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ] as const;

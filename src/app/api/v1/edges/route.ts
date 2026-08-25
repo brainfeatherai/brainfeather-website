@@ -1,10 +1,12 @@
 /* ────────────────────────────────────────────────────────────────
    /api/v1/edges
 
+   GET  — list edges. Superseded edges (validTo set) are returned too:
+          the dashboard filters them, same rule as memories.status.
    POST — link two nodes.
 
    Endpoints are IDs of either kind: a memory or an entity. think()
-   creates memory→entity 'mentioned_in' links automatically; this is for
+   creates memory→entity 'mentioned_in' links automatically; POST is for
    asserting a relationship by hand, e.g. entity→entity 'depends_on'.
 
    `weight` is accepted as 0-1 and stored as an integer 0-10 — Appwrite
@@ -12,9 +14,28 @@
    every caller expresses weight the same way.
    ──────────────────────────────────────────────────────────────── */
 
+import { Query } from 'node-appwrite';
 import { authenticate, fail } from '@/lib/server/api-auth';
+import { adminDb, DATABASE_ID, COLLECTIONS } from '@/lib/server/appwrite-admin';
 import { createEdge } from '@/lib/server/memory-store';
 import { EDGE_TYPES, oneOf, readJson, str } from '@/lib/server/validate';
+
+export async function GET(request: Request) {
+  const auth = await authenticate(request);
+  if (!auth.ok) return fail(auth.status, auth.error);
+
+  const limit = Math.min(
+    Math.max(Number(new URL(request.url).searchParams.get('limit')) || 300, 1),
+    500,
+  );
+
+  const res = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.edges, [
+    Query.equal('userId', auth.userId),
+    Query.limit(limit),
+  ]);
+
+  return Response.json({ edges: res.documents, count: res.documents.length });
+}
 
 export async function POST(request: Request) {
   const auth = await authenticate(request);

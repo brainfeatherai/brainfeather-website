@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 /* The canonical host. Everything SEO-facing already declares the apex —
    canonical tags, sitemap, robots, JSON-LD — so www redirects TO it.
@@ -78,4 +79,33 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  /* Fill these once the Sentry org/project exist; until then the build
+     skips source-map uploads silently (silent: true keeps CI logs clean
+     of the warning). */
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+
+  /* Upload logs only in CI, where someone is watching. */
+  silent: !process.env.CI,
+
+  /* Browser events go through this origin instead of *.ingest.sentry.io
+     — ad blockers recognize the Sentry host and silently drop 30-50%
+     of client errors, biased toward exactly the technical users who hit
+     edge cases. */
+  tunnelRoute: "/monitoring-tunnel",
+
+  sourcemaps: {
+    /* Sentry needs the maps; site visitors do not. */
+    deleteSourcemapsAfterUpload: true,
+  },
+
+  /* disableLogger is deprecated in @sentry/nextjs ≥10 — use the
+     webpack tree-shaking option instead. */
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
+});

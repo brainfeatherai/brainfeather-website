@@ -13,8 +13,8 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth, useAuth } from "@/components/AuthProvider";
-import { apiKeyService } from "@/services/appwrite";
-import type { ApiKey } from "@/types";
+import { authService, apiKeyService } from "@/services/appwrite";
+import type { ApiKey, User } from "@/types";
 
 const FIELD =
   "hairline h-11 w-full rounded-full border bg-paper px-5 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
@@ -29,7 +29,7 @@ function mcpConfig(token: string) {
         brainfeather: {
           command: "npx",
           args: ["-y", "@brainfeather/mcp"],
-          env: { BRAINFEATHER_TOKEN: token },
+          env: { BRAINFEATHER_API_KEY: token },
         },
       },
     },
@@ -40,9 +40,21 @@ function mcpConfig(token: string) {
 
 const mask = (key: string) => `${key.slice(0, 11)}…${key.slice(-4)}`;
 
+/* Absolute dates for key activity: "3 days ago" goes stale the moment
+   the page sits open, and a last-used timestamp is audit information —
+   precision beats friendliness here. */
+function usedLabel(lastUsedAt?: string): string {
+  if (!lastUsedAt) return "never used";
+  return `used ${new Date(lastUsedAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })}`;
+}
+
 function Settings() {
   const { user } = useAuth();
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
+  const [profile, setProfile] = useState<User | null>(null);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +74,17 @@ function Settings() {
         if (active) {
           setError(err instanceof Error ? err.message : "Could not load keys.");
         }
+      });
+
+    /* Profile row: plan and account metadata. get-or-create, so an
+       OAuth account without a row is backfilled here too. */
+    authService
+      .ensureProfile({ $id: user.$id, email: user.email ?? "", name: user.name })
+      .then((doc) => {
+        if (active) setProfile(doc as unknown as User);
+      })
+      .catch(() => {
+        /* A missing profile degrades the account card only. */
       });
 
     return () => {
@@ -106,7 +129,41 @@ function Settings() {
   }
 
   return (
-    <AppShell title="Settings" intro="Keys and editor setup.">
+    <AppShell title="Settings" intro="Account, keys and editor setup.">
+      <section className="hairline mb-11 rounded-xl border bg-paper p-4 sm:p-5">
+        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-forest">
+          Account
+        </h2>
+        <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2.5 text-[13px] sm:grid-cols-2">
+          <div className="flex justify-between gap-3 sm:block">
+            <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/45">
+              Email
+            </dt>
+            <dd className="truncate text-forest/85">{user?.email ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-3 sm:block">
+            <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/45">
+              Name
+            </dt>
+            <dd className="truncate text-forest/85">{user?.name || "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-3 sm:block">
+            <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/45">
+              Plan
+            </dt>
+            <dd className="text-forest/85">{profile?.plan ?? "free"}</dd>
+          </div>
+          <div className="flex justify-between gap-3 sm:block">
+            <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/45">
+              User id
+            </dt>
+            <dd className="truncate font-mono text-[11px] text-forest/60">
+              {user?.$id ?? "—"}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       <section>
         <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-forest">
           API keys
@@ -174,6 +231,9 @@ function Settings() {
                         shown once
                       </span>
                     ) : null}
+                    <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.08em] text-forest/35">
+                      {usedLabel(key.lastUsedAt)}
+                    </span>
                   </div>
                   <div className="ml-auto flex gap-2">
                     <button

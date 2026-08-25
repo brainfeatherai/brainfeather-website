@@ -108,6 +108,32 @@ export interface Pattern {
   suggestion?: string;
 }
 
+/* Graph nodes. Extracted automatically by the MCP/API pipeline from the
+   facts that mention them; one row per canonical name per user. */
+export interface Entity {
+  $id: string;
+  $createdAt: string;
+  userId: string;
+  name: string;
+  type: 'tool' | 'language' | 'concept' | 'person' | 'project' | 'pattern';
+  summary?: string;
+}
+
+/* An edge joins a memory to an entity ('mentioned_in') or two entities.
+   `validTo` set means superseded — reads must filter it, same rule as
+   memories.status. Weight is stored as an integer 0-10 because Appwrite
+   has no double attribute type. */
+export interface GraphEdge {
+  $id: string;
+  userId: string;
+  sourceId: string;
+  targetId: string;
+  type: string;
+  weight: number;
+  validFrom?: string;
+  validTo?: string;
+}
+
 export interface ApiResponse<T> {
   data: T;
   error?: string;

@@ -188,6 +188,34 @@ export async function deleteMemory(userId: string, id: string): Promise<boolean>
   return true;
 }
 
+/* Same ownership rule as deleteMemory, for edits and retractions.
+   Returns null for "not found or not yours" so the route can answer 404
+   without confirming which. */
+export async function updateMemory(
+  userId: string,
+  id: string,
+  data: { content?: string; category?: string; status?: 'active' | 'invalid'; supersededBy?: string },
+): Promise<MemoryDoc | null> {
+  let doc: MemoryDoc;
+  try {
+    doc = (await adminDb.getDocument(
+      DATABASE_ID,
+      COLLECTIONS.memories,
+      id,
+    )) as unknown as MemoryDoc;
+    if (doc.userId !== userId) return null;
+  } catch {
+    return null;
+  }
+  const updated = await adminDb.updateDocument(
+    DATABASE_ID,
+    COLLECTIONS.memories,
+    id,
+    data,
+  );
+  return updated as unknown as MemoryDoc;
+}
+
 /* ── Entities ───────────────────────────────────────────────────── */
 
 export async function listEntities(userId: string, type?: string): Promise<EntityDoc[]> {
@@ -232,6 +260,48 @@ export async function upsertEntity(
   return doc as unknown as EntityDoc;
 }
 
+/* Deleting a node cascades to its edges. Orphan edges pointing at a
+   vanished entity would still render in traversals (the graph resolves
+   missing endpoints to raw ids), so they go too. Ownership of the node
+   is verified; edges are deleted by reference, and they were all
+   created under the same userId. */
+export async function deleteEntity(userId: string, id: string): Promise<boolean> {
+  try {
+    const doc = (await adminDb.getDocument(
+      DATABASE_ID,
+      COLLECTIONS.entities,
+      id,
+    )) as unknown as EntityDoc;
+    if (doc.userId !== userId) return false;
+  } catch {
+    return false;
+  }
+
+  const [outgoing, incoming] = await Promise.all([
+    adminDb.listDocuments(DATABASE_ID, COLLECTIONS.edges, [
+      Query.equal('userId', userId),
+      Query.equal('sourceId', id),
+      Query.limit(100),
+    ]),
+    adminDb.listDocuments(DATABASE_ID, COLLECTIONS.edges, [
+      Query.equal('userId', userId),
+      Query.equal('targetId', id),
+      Query.limit(100),
+    ]),
+  ]);
+
+  await Promise.all(
+    [...outgoing.documents, ...incoming.documents].map((e) =>
+      adminDb
+        .deleteDocument(DATABASE_ID, COLLECTIONS.edges, (e as unknown as EdgeDoc).$id)
+        .catch(() => {}),
+    ),
+  );
+
+  await adminDb.deleteDocument(DATABASE_ID, COLLECTIONS.entities, id);
+  return true;
+}
+
 /* ── Edges ──────────────────────────────────────────────────────── */
 
 /* `weight` is stored as an integer 0-10, not a float: Appwrite has no
@@ -252,6 +322,22 @@ export async function createEdge(
     validFrom: new Date().toISOString(),
   });
   return doc as unknown as EdgeDoc;
+}
+
+/* Remove one link. Ownership checked on the edge row itself. */
+export async function deleteEdge(userId: string, id: string): Promise<boolean> {
+  try {
+    const doc = (await adminDb.getDocument(
+      DATABASE_ID,
+      COLLECTIONS.edges,
+      id,
+    )) as unknown as EdgeDoc;
+    if (doc.userId !== userId) return false;
+  } catch {
+    return false;
+  }
+  await adminDb.deleteDocument(DATABASE_ID, COLLECTIONS.edges, id);
+  return true;
 }
 
 export async function traverseGraph(

@@ -1,6 +1,6 @@
 import { account, databases } from '@/lib/appwrite';
-import { ID, Query, OAuthProvider } from 'appwrite';
-import type { User, Memory, ContextRule, Team, TeamMember, ApiKey, Decision, Pattern } from '@/types';
+import { ID, Permission, Query, OAuthProvider, Role } from 'appwrite';
+import type { Memory, ContextRule, Team, TeamMember, Decision, Pattern } from '@/types';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const USERS_COLLECTION = 'users';
@@ -20,7 +20,7 @@ export const authService = {
 
   async createEmailPassword(email: string, password: string, name: string) {
     const user = await account.create(ID.unique(), email, password, name);
-    
+
     // Create user profile in database
     await databases.createDocument(
       DATABASE_ID,
@@ -32,9 +32,13 @@ export const authService = {
         plan: 'free',
         memoriesCount: 0,
         lastActiveAt: new Date().toISOString(),
-      }
+      },
+      /* Owner-scoped row: the doc id IS the auth userId, and the users
+         collection runs with document security (create-only at
+         collection level). */
+      [Permission.read(Role.user(user.$id)), Permission.update(Role.user(user.$id))],
     );
-    
+
     return user;
   },
 
@@ -103,7 +107,8 @@ export const authService = {
           plan: 'free',
           memoriesCount: 0,
           lastActiveAt: new Date().toISOString(),
-        }
+        },
+        [Permission.read(Role.user(user.$id)), Permission.update(Role.user(user.$id))],
       );
     }
   },
@@ -342,7 +347,18 @@ export const apiKeyService = {
         userId,
         name,
         key,
-      }
+      },
+      /* The api_keys collection runs with document security: the
+         collection itself only grants `create` to signed-in users, and
+         each row is readable/writable/deletable by its owner alone.
+         Without these, a key created here would be invisible to the
+         session that made it — and with collection-level read instead,
+         every signed-in user could read everyone's keys. */
+      [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+      ],
     );
   },
 

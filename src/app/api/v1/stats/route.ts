@@ -8,8 +8,9 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { listActive } from '@/lib/server/memory-store';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 
-export async function GET(request: Request) {
+async function getStats(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
@@ -24,3 +25,5 @@ export async function GET(request: Request) {
 
   return Response.json({ total: all.length, byCategory, bySource });
 }
+
+export const GET = withRequestTelemetry('stats.read', getStats);

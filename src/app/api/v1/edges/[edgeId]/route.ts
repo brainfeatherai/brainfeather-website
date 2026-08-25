@@ -6,8 +6,9 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { deleteEdge } from '@/lib/server/memory-store';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 
-export async function DELETE(
+async function deleteEdgeRoute(
   request: Request,
   { params }: { params: Promise<{ edgeId: string }> },
 ) {
@@ -21,3 +22,5 @@ export async function DELETE(
 
   return Response.json({ deleted: edgeId });
 }
+
+export const DELETE = withRequestTelemetry('edge.delete', deleteEdgeRoute);

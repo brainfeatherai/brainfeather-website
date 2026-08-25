@@ -44,6 +44,7 @@ export const COLLECTIONS = {
   entities: 'entities',
   edges: 'edges',
   apiKeys: 'api_keys',
+  apiRequests: 'api_requests',
   waitlist: 'waitlist',
 } as const;
 

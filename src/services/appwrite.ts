@@ -8,7 +8,6 @@ const MEMORIES_COLLECTION = 'memories';
 const CONTEXT_RULES_COLLECTION = 'context_rules';
 const TEAMS_COLLECTION = 'teams';
 const TEAM_MEMBERS_COLLECTION = 'team_members';
-const API_KEYS_COLLECTION = 'api_keys';
 const DECISIONS_COLLECTION = 'decisions';
 const PATTERNS_COLLECTION = 'patterns';
 
@@ -48,6 +47,10 @@ export const authService = {
     } catch {
       return null;
     }
+  },
+
+  async createJWT() {
+    return await account.createJWT({ duration: 3600 });
   },
 
   /* Full-page redirect to the provider, so nothing after this runs.
@@ -323,65 +326,6 @@ export const teamMemberService = {
 
   async updateRole(id: string, role: TeamMember['role']) {
     return await databases.updateDocument(DATABASE_ID, TEAM_MEMBERS_COLLECTION, id, { role });
-  },
-};
-
-// API Key services
-export const apiKeyService = {
-  async create(userId: string, name: string) {
-    // Prefix must be bf_live_ / bf_test_ — the MCP server rejects any
-    // other shape before it makes a single request.
-    //
-    // The body is crypto-random, not ID.unique(): ID.unique() is
-    // timestamp-derived, so two keys minted in the same moment are
-    // adjacent and the value is guessable from the creation time.
-    const entropy = new Uint8Array(16);
-    crypto.getRandomValues(entropy);
-    const body = Array.from(entropy, (b) => b.toString(16).padStart(2, '0')).join('');
-    const key = `bf_live_${body}`;
-    return await databases.createDocument(
-      DATABASE_ID,
-      API_KEYS_COLLECTION,
-      ID.unique(),
-      {
-        userId,
-        name,
-        key,
-      },
-      /* The api_keys collection runs with document security: the
-         collection itself only grants `create` to signed-in users, and
-         each row is readable/writable/deletable by its owner alone.
-         Without these, a key created here would be invisible to the
-         session that made it — and with collection-level read instead,
-         every signed-in user could read everyone's keys. */
-      [
-        Permission.read(Role.user(userId)),
-        Permission.update(Role.user(userId)),
-        Permission.delete(Role.user(userId)),
-      ],
-    );
-  },
-
-  async list(userId: string) {
-    const response = await databases.listDocuments(
-      DATABASE_ID,
-      API_KEYS_COLLECTION,
-      [
-        Query.equal('userId', userId),
-        Query.orderDesc('$createdAt'),
-      ]
-    );
-    return response;
-  },
-
-  async delete(id: string) {
-    return await databases.deleteDocument(DATABASE_ID, API_KEYS_COLLECTION, id);
-  },
-
-  async updateLastUsed(id: string) {
-    return await databases.updateDocument(DATABASE_ID, API_KEYS_COLLECTION, id, {
-      lastUsedAt: new Date().toISOString(),
-    });
   },
 };
 

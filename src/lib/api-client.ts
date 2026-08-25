@@ -1,23 +1,5 @@
-/* ────────────────────────────────────────────────────────────────
-   Browser-side client for /api/v1/*, authenticated with the user's
-   own bf_live_ key.
-
-   Why the dashboard talks to the API instead of Appwrite directly:
-   the key resolves to a userId server-side, and every route enforces
-   ownership against the admin client — so the site needs NO read or
-   write permissions on the data collections for signed-in users. One
-   credential (the bf key) gates everything, which is the product
-   promise.
-
-   The key is obtainable in-browser because api_keys rows are readable
-   by their owner's session (Settings already relies on that). Using
-   it here adds no new exposure; it removes the need for per-collection
-   session grants.
-   ──────────────────────────────────────────────────────────────── */
-
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { apiKeyService } from "@/services/appwrite";
 
 export class ApiError extends Error {
   constructor(
@@ -29,7 +11,7 @@ export class ApiError extends Error {
 }
 
 export async function bfFetch<T>(
-  key: string,
+  credential: string,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
@@ -38,37 +20,21 @@ export async function bfFetch<T>(
     res = await fetch(`/api/v1${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${credential}`,
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
       },
     });
   } catch {
-    throw new ApiError(
-      0,
-      "Could not reach the Brainfeather API. Is the site's server running?",
-    );
+    throw new ApiError(0, "Could not reach the Brainfeather API.");
   }
 
-  if (res.status === 401) {
-    throw new ApiError(
-      401,
-      "Key rejected — it may have been revoked. Reload the page to get a fresh one.",
-    );
-  }
-
-  const body = (await res.json().catch(() => null)) as
-    | { error?: string }
-    | null;
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      body?.error ?? `Request failed (${res.status}).`,
-    );
+    throw new ApiError(res.status, body?.error ?? `Request failed (${res.status}).`);
   }
   return body as T;
 }
-
-/* ── Response shapes (mirror lib/server/memory-store.ts) ────────── */
 
 export type Fact = {
   $id: string;
@@ -97,6 +63,39 @@ export type EdgeRow = {
   validTo?: string;
 };
 
+export type ApiKeyRow = {
+  $id: string;
+  $createdAt: string;
+  name: string;
+  keyHint: string;
+  lastUsedAt?: string;
+};
+
+export type RequestAnalyticsRow = {
+  $id: string;
+  $createdAt: string;
+  operation: string;
+  method: string;
+  status: number;
+  durationMs: number;
+  occurredAt: string;
+  keyName: string;
+};
+
+export type RequestAnalytics = {
+  configured: boolean;
+  windowDays: number;
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  successRate: number;
+  averageDurationMs: number;
+  p95DurationMs: number;
+  capped: boolean;
+  byOperation: { operation: string; count: number; averageDurationMs: number }[];
+  recent: RequestAnalyticsRow[];
+};
+
 export type SaveDecision = {
   action: "add" | "duplicate" | "reject";
   id?: string;
@@ -104,9 +103,8 @@ export type SaveDecision = {
   invalidated?: string[];
 };
 
-/* Human line for a save outcome. The API answers add | duplicate |
-   reject with a reason, and none of the three is a failure — the
-   wording mirrors the MCP server's decisionLine(). */
+export type ApiRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
+
 export function decisionLine(d: SaveDecision): string {
   if (d.action === "reject") return `Not stored — ${d.reason ?? "filtered"}`;
   if (d.action === "duplicate") return "Already known. Nothing changed.";
@@ -118,45 +116,25 @@ export function decisionLine(d: SaveDecision): string {
   return `Saved — ${d.reason ?? "new fact"}.${retracted}`;
 }
 
-/* Resolves the bf key the dashboard runs on: the newest existing key,
-   or a fresh one named "Dashboard" when the account has none. Resolved
-   once per mount; a revoked key surfaces as a 401 with a reload hint. */
-export function useBfKey(): { key: string | null; error: string | null } {
-  const { user } = useAuth();
-  const [key, setKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function useApiSession() {
+  const { jwt, jwtError, refreshJwt } = useAuth();
+  const request = useCallback(
+    async <T,>(path: string, init?: RequestInit): Promise<T> => {
+      let credential = jwt ?? (await refreshJwt());
+      if (!credential) throw new ApiError(401, "Dashboard authentication is unavailable.");
 
-  useEffect(() => {
-    if (!user) return;
-    let active = true;
-
-    (async () => {
       try {
-        const res = await apiKeyService.list(user.$id);
-        const docs = res.documents as unknown as { key: string }[];
-        if (!active) return;
-        if (docs.length > 0) {
-          setKey(docs[0].key);
-          return;
-        }
-        const created = (await apiKeyService.create(
-          user.$id,
-          "Dashboard",
-        )) as unknown as { key: string };
-        if (!active) return;
-        setKey(created.key);
-      } catch (err) {
-        if (!active) return;
-        setError(
-          err instanceof Error ? err.message : "Could not get an API key.",
-        );
+        return await bfFetch<T>(credential, path, init);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) throw error;
+        const refreshed = await refreshJwt();
+        if (!refreshed) throw error;
+        credential = refreshed;
+        return bfFetch<T>(credential, path, init);
       }
-    })();
+    },
+    [jwt, refreshJwt],
+  );
 
-    return () => {
-      active = false;
-    };
-  }, [user]);
-
-  return { key, error };
+  return { token: jwt, error: jwt ? null : jwtError, request };
 }

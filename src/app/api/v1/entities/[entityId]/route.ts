@@ -7,8 +7,9 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { deleteEntity } from '@/lib/server/memory-store';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 
-export async function DELETE(
+async function deleteEntityRoute(
   request: Request,
   { params }: { params: Promise<{ entityId: string }> },
 ) {
@@ -22,3 +23,5 @@ export async function DELETE(
 
   return Response.json({ deleted: entityId });
 }
+
+export const DELETE = withRequestTelemetry('entity.delete', deleteEntityRoute);

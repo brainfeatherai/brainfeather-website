@@ -16,16 +16,21 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { listActive } from '@/lib/server/memory-store';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
+import { strictScopeOf } from '@/lib/server/validate';
 
-export async function GET(request: Request) {
+async function getContext(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
-  const projectId = new URL(request.url).searchParams.get('projectId') ?? undefined;
+  const params = new URL(request.url).searchParams;
+  const projectId = params.get('projectId') ?? undefined;
+  const strictScope = strictScopeOf(params);
+  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
 
   /* Only active facts. A superseded decision reaching a prompt is the
      precise failure this product claims to prevent. */
-  const all = await listActive(auth.userId, { projectId, limit: 100 });
+  const all = await listActive(auth.userId, { projectId, strictScope, limit: 100 });
 
   const pick = (...categories: string[]) =>
     all.filter((m) => categories.includes(m.category)).map((m) => m.content);
@@ -46,3 +51,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withRequestTelemetry('context.read', getContext);

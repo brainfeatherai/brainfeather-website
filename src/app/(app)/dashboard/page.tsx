@@ -3,8 +3,8 @@
 /* ────────────────────────────────────────────────────────────────
    /dashboard — manage the facts currently held about you.
 
-   Every operation runs through /api/v1 with the user's bf_live_ key
-   (see lib/api-client.ts for why). That means adds go through the
+   Every operation runs through /api/v1 with a short-lived Appwrite JWT.
+   That means adds go through the
    SAME think() pipeline the MCP server uses — dedup, junk filter,
    supersede, entity linking — so a fact saved here is indistinguishable
    from one an agent saved, and the reply says which of the three
@@ -15,9 +15,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
-  bfFetch,
   decisionLine,
-  useBfKey,
+  useApiSession,
   type Fact,
   type SaveDecision,
 } from "@/lib/api-client";
@@ -34,10 +33,10 @@ const CATEGORIES = [
 ] as const;
 
 const FIELD =
-  "hairline h-11 w-full rounded-full border bg-paper px-5 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
+  "hairline h-11 w-full rounded-lg border bg-paper px-4 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
 
 const ICON_BTN =
-  "hairline rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "hairline rounded-md border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
 function Stat({ value, label }: { value: number | string; label: string }) {
   return (
@@ -74,7 +73,7 @@ function MemoryRow({
   return (
     <li className="hairline group rounded-xl border bg-paper p-4 transition-[border-color] duration-300 hover:border-emerald/35">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-mint/25 px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-forest">
+        <span className="rounded-md border border-emerald/15 bg-mint/25 px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-forest">
           {memory.category}
         </span>
         <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/40">
@@ -83,7 +82,7 @@ function MemoryRow({
         {memory.projectId ? (
           <span
             title={memory.projectId}
-            className="max-w-[16ch] truncate rounded-full bg-paper-dim px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-forest/45"
+            className="max-w-[16ch] truncate rounded-md bg-paper-dim px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-forest/45"
           >
             {memory.projectId}
           </span>
@@ -116,7 +115,7 @@ function MemoryRow({
           type="button"
           onClick={() => onRetract(memory.$id)}
           disabled={busy}
-          className={`${ICON_BTN} text-forest/55 hover:border-amber-400 hover:text-amber-700`}
+          className={`${ICON_BTN} text-forest/55 hover:border-amber-400/50 hover:text-amber-300`}
         >
           Retract
         </button>
@@ -124,7 +123,7 @@ function MemoryRow({
           type="button"
           onClick={() => onDelete(memory.$id)}
           disabled={busy}
-          className={`${ICON_BTN} text-forest/45 hover:border-red-400 hover:text-red-700`}
+          className={`${ICON_BTN} text-forest/45 hover:border-red-400/50 hover:text-red-300`}
         >
           Delete
         </button>
@@ -134,7 +133,7 @@ function MemoryRow({
 }
 
 function Dashboard() {
-  const { key, error: keyError } = useBfKey();
+  const { token, error: sessionError, request } = useApiSession();
   const [memories, setMemories] = useState<Fact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -156,23 +155,19 @@ function Dashboard() {
   /* Pure fetch; setState happens in the caller so the effect body never
      sets state synchronously (react-hooks/set-state-in-effect). */
   const fetchFacts = useCallback(
-    (apiKey: string) =>
-      bfFetch<{ memories: Fact[] }>(apiKey, "/memories?limit=100"),
-    [],
+    () => request<{ memories: Fact[] }>("/memories?limit=100"),
+    [request],
   );
 
-  const load = useCallback(
-    async (apiKey: string) => {
-      const res = await fetchFacts(apiKey);
-      setMemories(res.memories);
-    },
-    [fetchFacts],
-  );
+  const load = useCallback(async () => {
+    const res = await fetchFacts();
+    setMemories(res.memories);
+  }, [fetchFacts]);
 
   useEffect(() => {
-    if (!key) return;
+    if (!token) return;
     let active = true;
-    fetchFacts(key)
+    fetchFacts()
       .then((res) => {
         if (active) setMemories(res.memories);
       })
@@ -183,16 +178,16 @@ function Dashboard() {
     return () => {
       active = false;
     };
-  }, [key, fetchFacts]);
+  }, [token, fetchFacts]);
 
   async function addMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!key) return;
+    if (!token) return;
     setAdding(true);
     setError(null);
     setNotice(null);
     try {
-      const decision = await bfFetch<SaveDecision>(key, "/memories", {
+      const decision = await request<SaveDecision>("/memories", {
         method: "POST",
         body: JSON.stringify({
           content: content.trim(),
@@ -205,7 +200,7 @@ function Dashboard() {
       if (decision.action === "add") {
         setContent("");
         setTitle("");
-        await load(key);
+        await load();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
@@ -215,16 +210,16 @@ function Dashboard() {
   }
 
   async function retract(id: string) {
-    if (!key) return;
+    if (!token) return;
     if (!confirm("Retract this fact? Agents will stop seeing it. History is kept.")) return;
     setBusyId(id);
     setError(null);
     try {
-      await bfFetch(key, `/memories/${encodeURIComponent(id)}`, {
+      await request(`/memories/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "invalid" }),
       });
-      await load(key);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not retract.");
     } finally {
@@ -233,12 +228,12 @@ function Dashboard() {
   }
 
   async function remove(id: string) {
-    if (!key) return;
+    if (!token) return;
     if (!confirm("Delete permanently? Unlike retracting, this cannot be undone.")) return;
     setBusyId(id);
     setError(null);
     try {
-      await bfFetch(key, `/memories/${encodeURIComponent(id)}`, {
+      await request(`/memories/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       setMemories((prev) => (prev ?? []).filter((m) => m.$id !== id));
@@ -250,11 +245,11 @@ function Dashboard() {
   }
 
   async function saveEdit() {
-    if (!key || !editing) return;
+    if (!token || !editing) return;
     setBusyId(editing.id);
     setError(null);
     try {
-      await bfFetch(key, `/memories/${encodeURIComponent(editing.id)}`, {
+      await request(`/memories/${encodeURIComponent(editing.id)}`, {
         method: "PATCH",
         body: JSON.stringify({
           content: editing.content.trim(),
@@ -262,7 +257,7 @@ function Dashboard() {
         }),
       });
       setEditing(null);
-      await load(key);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save edit.");
     } finally {
@@ -288,17 +283,18 @@ function Dashboard() {
     [memories],
   );
 
-  const banner = error ?? keyError;
+  const banner = error ?? sessionError;
 
   return (
     <AppShell
       title="Memories"
       intro="What Brainfeather currently holds about your work. Retracted facts are hidden."
+      wide
     >
       {banner ? (
         <p
           role="alert"
-          className="hairline mb-6 rounded-xl border border-red-300 bg-red-50 p-4 text-[13px] text-red-800"
+          className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200"
         >
           {banner}
         </p>
@@ -313,16 +309,16 @@ function Dashboard() {
         </p>
       ) : null}
 
-      {!key && !banner ? (
+      {!token && !banner ? (
         <output
           aria-live="polite"
           className="block font-mono text-[11px] uppercase tracking-[0.1em] text-forest/45"
         >
-          Resolving key…
+          Authenticating…
         </output>
       ) : null}
 
-      {key ? (
+      {token ? (
         <>
           {/* Add — runs the same pipeline as the MCP server, so the
               response may be add, duplicate or reject. */}
@@ -366,7 +362,7 @@ function Dashboard() {
                     role="radio"
                     aria-checked={category === c}
                     onClick={() => setCategory(c)}
-                    className={`rounded-full px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                    className={`rounded-md px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
                       category === c
                         ? "bg-forest text-paper"
                         : "hairline border bg-transparent text-forest/55 hover:text-forest"
@@ -379,7 +375,7 @@ function Dashboard() {
               <button
                 type="submit"
                 disabled={adding || content.trim().length < 3}
-                className="ml-auto h-10 shrink-0 rounded-full bg-forest px-5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+                className="ml-auto h-10 shrink-0 rounded-lg bg-emerald px-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-forest-deep transition-colors hover:bg-emerald/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {adding ? "Saving…" : "Add memory"}
               </button>
@@ -402,7 +398,7 @@ function Dashboard() {
                 Connect the MCP server in your editor and work normally, or add
                 your first fact above. Durable facts arrive here either way.
               </p>
-              <code className="hairline mt-5 inline-block rounded-full border bg-paper-dim px-4 py-2 font-mono text-[12px] text-forest/75">
+              <code className="hairline mt-5 inline-block rounded-md border bg-paper-dim px-4 py-2 font-mono text-[12px] text-forest/75">
                 {COMMAND}
               </code>
             </div>
@@ -435,7 +431,7 @@ function Dashboard() {
                     type="button"
                     onClick={() => setCategoryFilter(null)}
                     aria-pressed={categoryFilter === null}
-                    className={`rounded-full px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                    className={`rounded-md px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
                       categoryFilter === null
                         ? "bg-forest text-paper"
                         : "hairline border text-forest/55 hover:text-forest"
@@ -451,7 +447,7 @@ function Dashboard() {
                         setCategoryFilter((cur) => (cur === cat ? null : cat))
                       }
                       aria-pressed={categoryFilter === cat}
-                      className={`rounded-full px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                      className={`rounded-md px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] transition-colors ${
                         categoryFilter === cat
                           ? "bg-forest text-paper"
                           : "hairline border text-forest/55 hover:text-forest"
@@ -496,7 +492,7 @@ function Dashboard() {
                               busyId === memory.$id ||
                               editing.content.trim().length < 3
                             }
-                            className="h-9 rounded-full bg-forest px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-paper disabled:opacity-60"
+                            className="h-9 rounded-md bg-emerald px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-forest-deep disabled:opacity-60"
                           >
                             Save
                           </button>

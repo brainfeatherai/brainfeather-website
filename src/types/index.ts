@@ -14,24 +14,15 @@ export interface Memory {
   $createdAt: string;
   $updatedAt: string;
   userId: string;
-  /* Mirrors the `memories.source` enum in Appwrite. Keep this list, the
-     MCP server's SOURCES, and the API's validate.ts identical — the
-     database is the only one that enforces it, so any value the others
-     accept but it rejects becomes a 500 instead of a 400.
-
-     The last three were added to the Appwrite enum on 2026-08-24; before
-     that both client lists advertised them while the schema refused
-     them, which is exactly how that 500 showed up. */
+  /* Mirrors the deployed `memories.source` enum in Appwrite. Unknown MCP
+     clients map to `manual` until the live schema is expanded. */
   source:
     | 'manual'
     | 'chatgpt'
     | 'claude'
     | 'cursor'
     | 'slack'
-    | 'chrome'
-    | 'opencode'
-    | 'codex'
-    | 'antigravity';
+    | 'chrome';
   title: string;
   content: string;
   category: 'preference' | 'context' | 'decision' | 'code' | 'project' | 'team';
@@ -80,9 +71,8 @@ export interface TeamMember {
 export interface ApiKey {
   $id: string;
   $createdAt: string;
-  userId: string;
   name: string;
-  key: string;
+  keyHint: string;
   lastUsedAt?: string;
 }
 

@@ -7,26 +7,77 @@
    attract (Hooke), center gravity pulls inward, velocity damping
    stabilises. Mouse drag moves nodes; hover shows tooltip.
 
-   Right sidebar: communities (entity types) with checkboxes to
-   filter, node counts, dark theme matching forest-deep palette.
+   The graph fills the available warm paper canvas; node details appear
+   as an overlay so the visualization does not shrink when inspected.
    ──────────────────────────────────────────────────────────────── */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, LocateFixed, Network, RefreshCw, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
-import { bfFetch, useBfKey, type EdgeRow, type EntityRow } from "@/lib/api-client";
+import {
+  useApiSession,
+  type ApiRequest,
+  type EdgeRow,
+  type EntityRow,
+  type Fact,
+} from "@/lib/api-client";
 
 /* ── Colours per entity type ──────────────────────────────────── */
 const TYPE_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
-  tool:     { fill: "#4ade80", stroke: "#166534", label: "Tool" },
-  language: { fill: "#34d399", stroke: "#065f46", label: "Language" },
-  concept:  { fill: "#a78bfa", stroke: "#5b21b6", label: "Concept" },
-  person:   { fill: "#fbbf24", stroke: "#92400e", label: "Person" },
-  project:  { fill: "#60a5fa", stroke: "#1e40af", label: "Project" },
-  pattern:  { fill: "#f472b6", stroke: "#9d174d", label: "Pattern" },
+  tool:     { fill: "#34d399", stroke: "#a7f3d0", label: "Tool" },
+  language: { fill: "#60a5fa", stroke: "#bfdbfe", label: "Language" },
+  concept:  { fill: "#a78bfa", stroke: "#ddd6fe", label: "Concept" },
+  person:   { fill: "#fbbf24", stroke: "#fde68a", label: "Person" },
+  project:  { fill: "#22d3ee", stroke: "#a5f3fc", label: "Project" },
+  pattern:  { fill: "#f472b6", stroke: "#fbcfe8", label: "Pattern" },
 };
-const DEFAULT_COLOR = { fill: "#94a3b8", stroke: "#334155", label: "Unknown" };
-const ALL_TYPES = ["tool", "language", "concept", "person", "project", "pattern"];
+const DEFAULT_COLOR = { fill: "#94a3b8", stroke: "#e2e8f0", label: "Unknown" };
+const TYPE_ORDER = ["tool", "language", "concept", "person", "project", "pattern"];
+
+const EDGE_STYLES: Record<
+  string,
+  { color: string; label: string; dash: number[]; directed: boolean }
+> = {
+  co_mentioned: { color: "#64748b", label: "Co-mentioned", dash: [], directed: false },
+  related_to: { color: "#34d399", label: "Related", dash: [], directed: false },
+  uses: { color: "#fbbf24", label: "Uses", dash: [], directed: true },
+  depends_on: { color: "#60a5fa", label: "Depends on", dash: [6, 4], directed: true },
+  part_of: { color: "#22d3ee", label: "Part of", dash: [2, 4], directed: true },
+  contradicts: { color: "#f87171", label: "Contradicts", dash: [7, 4], directed: false },
+  supersedes: { color: "#c084fc", label: "Supersedes", dash: [10, 4], directed: true },
+};
+const DEFAULT_EDGE_STYLE = EDGE_STYLES.co_mentioned;
+
+type GraphData = {
+  entities: EntityRow[];
+  edges: EdgeRow[];
+  memories: Fact[];
+};
+
+async function loadGraphData(
+  request: ApiRequest,
+  backfillWhenEmpty: boolean,
+): Promise<GraphData> {
+  let entityResult = await request<{ entities: EntityRow[] }>("/entities");
+  if (backfillWhenEmpty && entityResult.entities.length === 0) {
+    entityResult = await request<{ entities: EntityRow[] }>(
+      "/entities/backfill",
+      { method: "POST" },
+    );
+  }
+
+  const [edgeResult, memoryResult] = await Promise.all([
+    request<{ edges: EdgeRow[] }>("/edges").catch(() => null),
+    request<{ memories: Fact[] }>("/memories?limit=100").catch(() => null),
+  ]);
+
+  return {
+    entities: entityResult.entities,
+    edges: edgeResult?.edges ?? [],
+    memories: memoryResult?.memories ?? [],
+  };
+}
 
 /* ── Physics constants ───────────────────────────────────────── */
 const REPULSION = 6000;
@@ -53,6 +104,184 @@ interface SimNode {
 interface SimEdge {
   source: string;
   target: string;
+  type: string;
+}
+
+type TypeCount = { type: string; count: number };
+type RelationCount = {
+  type: string;
+  count: number;
+  style: (typeof EDGE_STYLES)[string];
+};
+
+function GraphLegend({
+  nodeCount,
+  edgeCount,
+  evidenceCount,
+  typeCounts,
+  relationCounts,
+}: {
+  nodeCount: number;
+  edgeCount: number;
+  evidenceCount: number;
+  typeCounts: TypeCount[];
+  relationCounts: RelationCount[];
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const visibleRelations = relationCounts.length
+    ? relationCounts
+    : ["related_to", "uses", "depends_on"].map((type) => ({
+        type,
+        count: 0,
+        style: EDGE_STYLES[type],
+      }));
+
+  return (
+    <aside className="pointer-events-auto w-72 overflow-hidden rounded-xl border border-white/10 bg-[#1b1d1c]/96 shadow-[0_16px_48px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-medium text-forest/85 transition-colors hover:bg-white/[0.035]"
+      >
+        <ChevronDown
+          size={13}
+          strokeWidth={1.8}
+          aria-hidden
+          className={`text-forest/45 transition-transform ${expanded ? "" : "-rotate-90"}`}
+        />
+        Legend
+      </button>
+
+      {expanded ? (
+        <div className="max-h-[min(68vh,520px)] overflow-y-auto border-t border-white/[0.07] px-4 pb-4">
+          <p className="mt-4 font-mono text-[8px] uppercase tracking-[0.15em] text-forest/28">
+            Statistics
+          </p>
+          <dl className="mt-2.5 flex flex-col gap-2 text-[11px] text-forest/55">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-sm border border-emerald/60 bg-emerald/10" />
+              <dt>Nodes</dt>
+              <dd className="ml-auto font-mono text-forest/35">{nodeCount}</dd>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-px w-3 bg-violet-300" />
+              <dt>Connections</dt>
+              <dd className="ml-auto font-mono text-forest/35">{edgeCount}</dd>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full border border-sky-300/70" />
+              <dt>Evidence</dt>
+              <dd className="ml-auto font-mono text-forest/35">{evidenceCount}</dd>
+            </div>
+          </dl>
+
+          <p className="mt-4 font-mono text-[8px] uppercase tracking-[0.15em] text-forest/28">
+            Node types
+          </p>
+          {typeCounts.length ? (
+            <div className="mt-2.5 flex flex-col gap-2">
+              {typeCounts.map(({ type, count }) => {
+                const color = TYPE_COLORS[type] ?? DEFAULT_COLOR;
+                return (
+                  <span key={type} className="flex items-center gap-2 text-[11px] text-forest/55">
+                    <span
+                      className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]"
+                      style={{ background: color.fill, color: color.fill }}
+                    />
+                    {color.label}
+                    <span className="ml-auto font-mono text-forest/30">{count}</span>
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-2 text-[10px] text-forest/30">No node types yet.</p>
+          )}
+
+          <p className="mt-4 font-mono text-[8px] uppercase tracking-[0.15em] text-forest/28">
+            Relationships
+          </p>
+          <div className="mt-2.5 flex flex-col gap-2">
+            {visibleRelations.map(({ type, count, style }) => (
+              <span key={type} className="flex items-center gap-2 text-[11px] text-forest/55">
+                <span
+                  className="w-3 border-t"
+                  style={{
+                    borderColor: style.color,
+                    borderTopStyle: style.dash.length ? "dashed" : "solid",
+                  }}
+                />
+                {style.label}
+                <span className="ml-auto font-mono text-forest/30">{count}</span>
+              </span>
+            ))}
+          </div>
+
+          <p className="mt-4 font-mono text-[8px] uppercase tracking-[0.15em] text-forest/28">
+            Memory status
+          </p>
+          <div className="mt-2.5 flex items-center gap-2 text-[11px] text-forest/55">
+            <span className="h-2 w-2 rounded-sm border border-emerald/60 bg-emerald/15" />
+            Active evidence
+            <span className="ml-auto font-mono text-forest/30">{evidenceCount}</span>
+          </div>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function tickSimulation(
+  sim: SimNode[],
+  edgeList: SimEdge[],
+  draggedId?: string,
+): void {
+  const ids = new Set(sim.map((node) => node.id));
+
+  for (const node of sim) {
+    node.vx = 0;
+    node.vy = 0;
+
+    for (const other of sim) {
+      if (node.id === other.id) continue;
+      let dx = node.x - other.x;
+      let dy = node.y - other.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (dist < MIN_DIST) {
+        dx = (dx / dist) * MIN_DIST;
+        dy = (dy / dist) * MIN_DIST;
+      }
+      const force = REPULSION / (dist * dist);
+      node.vx += (dx / dist) * force;
+      node.vy += (dy / dist) * force;
+    }
+
+    node.vx -= node.x * CENTER_GRAVITY;
+    node.vy -= node.y * CENTER_GRAVITY;
+  }
+
+  for (const edge of edgeList) {
+    const source = sim.find((node) => node.id === edge.source);
+    const target = sim.find((node) => node.id === edge.target);
+    if (!source || !target || !ids.has(source.id) || !ids.has(target.id)) continue;
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const force = (dist - IDEAL_LENGTH) * ATTRACTION;
+    source.vx += (dx / dist) * force;
+    source.vy += (dy / dist) * force;
+    target.vx -= (dx / dist) * force;
+    target.vy -= (dy / dist) * force;
+  }
+
+  for (const node of sim) {
+    if (node.id === draggedId) continue;
+    node.vx *= DAMPING;
+    node.vy *= DAMPING;
+    node.x += node.vx;
+    node.y += node.vy;
+  }
 }
 
 /* ── Tooltip ─────────────────────────────────────────────────── */
@@ -71,7 +300,7 @@ function Tooltip({
   const c = TYPE_COLORS[node.type] ?? DEFAULT_COLOR;
   return (
     <div
-      className="pointer-events-none fixed z-50 max-w-xs rounded-xl border border-white/10 bg-[#0d1b16] px-4 py-3 shadow-xl"
+      className="pointer-events-none fixed z-50 max-w-xs rounded-xl border border-white/10 bg-[#121514]/95 px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl"
       style={{ left: x + 16, top: y - 8 }}
     >
       <div className="flex items-center gap-2">
@@ -79,87 +308,18 @@ function Tooltip({
           className="inline-block h-3 w-3 rounded-full"
           style={{ background: c.fill }}
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-white/40">
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">
           {c.label}
         </span>
       </div>
-      <p className="mt-1 text-[14px] font-semibold text-white">{node.name}</p>
+      <p className="mt-1 text-[14px] font-semibold text-forest">{node.name}</p>
       {node.summary ? (
-        <p className="mt-1 text-[12px] leading-relaxed text-white/60">{node.summary}</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-forest/60">{node.summary}</p>
       ) : null}
-      <p className="mt-1 font-mono text-[10px] text-white/30">
+      <p className="mt-1 font-mono text-[10px] text-forest/30">
         {node.degree} connection{node.degree !== 1 ? "s" : ""}
       </p>
     </div>
-  );
-}
-
-/* ── Community sidebar ───────────────────────────────────────── */
-function CommunityPanel({
-  groups,
-  enabled,
-  onToggle,
-}: {
-  groups: { type: string; count: number; nodes: SimNode[] }[];
-  enabled: Set<string>;
-  onToggle: (type: string) => void;
-}) {
-  const total = groups.reduce((s, g) => s + g.count, 0);
-  return (
-    <aside className="flex w-64 shrink-0 flex-col gap-0 rounded-2xl border border-white/8 bg-[#0d1b16]/80 p-4 backdrop-blur-sm">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/50">
-        Communities
-      </h2>
-      <p className="mt-1 font-mono text-[10px] text-white/30">
-        {total} node{total !== 1 ? "s" : ""} total
-      </p>
-      <ul className="mt-4 flex flex-col gap-1.5">
-        {groups.map((g) => {
-          const c = TYPE_COLORS[g.type] ?? DEFAULT_COLOR;
-          const checked = enabled.has(g.type);
-          return (
-            <li key={g.type}>
-              <button
-                type="button"
-                onClick={() => onToggle(g.type)}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                  checked ? "bg-white/5" : "opacity-40 hover:opacity-60"
-                }`}
-              >
-                <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                    checked
-                      ? "border-transparent"
-                      : "border-white/20"
-                  }`}
-                  style={checked ? { background: c.fill } : undefined}
-                >
-                  {checked ? (
-                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                      <path
-                        d="M1 4L3.5 6.5L9 1"
-                        stroke="white"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : null}
-                </span>
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-full"
-                  style={{ background: c.fill }}
-                />
-                <span className="flex-1 truncate text-[12px] font-medium text-white/80">
-                  {c.label}
-                </span>
-                <span className="font-mono text-[11px] text-white/30">{g.count}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </aside>
   );
 }
 
@@ -167,18 +327,28 @@ function CommunityPanel({
 function GraphCanvas({
   nodes,
   edges,
-  enabledTypes,
+  selectedId,
+  focusIds,
+  focusActive,
+  resetKey,
   onSelect,
 }: {
   nodes: SimNode[];
   edges: SimEdge[];
-  enabledTypes: Set<string>;
+  selectedId: string | null;
+  focusIds: Set<string>;
+  focusActive: boolean;
+  resetKey: number;
   onSelect: (node: SimNode | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef(nodes.map((n) => ({ ...n })));
   const edgesRef = useRef(edges);
-  const enabledRef = useRef(enabledTypes);
+  const selectedRef = useRef(selectedId);
+  const focusRef = useRef(focusIds);
+  const focusActiveRef = useRef(focusActive);
+  const initializedRef = useRef(false);
+  const resetRef = useRef(resetKey);
   const rafRef = useRef<number>(0);
   const dragRef = useRef<{ node: SimNode; offsetX: number; offsetY: number } | null>(null);
   const [tooltip, setTooltip] = useState<{
@@ -188,80 +358,31 @@ function GraphCanvas({
     visible: boolean;
   }>({ node: null, x: 0, y: 0, visible: false });
 
-  /* Keep refs in sync */
+  /* Keep interaction state available to the animation frame without
+     restarting the simulation every time search or selection changes. */
   useEffect(() => {
-    enabledRef.current = enabledTypes;
-  }, [enabledTypes]);
+    selectedRef.current = selectedId;
+    focusRef.current = focusIds;
+    focusActiveRef.current = focusActive;
+  }, [selectedId, focusIds, focusActive]);
 
   /* Initialise positions on first render or when nodes change */
   useEffect(() => {
-    const existing = new Map(simRef.current.map((n) => [n.id, n]));
+    const shouldReset = !initializedRef.current || resetRef.current !== resetKey;
+    const existing = shouldReset
+      ? new Map<string, SimNode>()
+      : new Map(simRef.current.map((n) => [n.id, n]));
+    initializedRef.current = true;
+    resetRef.current = resetKey;
     simRef.current = nodes.map((n, i) => {
       const prev = existing.get(n.id);
       if (prev) return { ...n, x: prev.x, y: prev.y, vx: 0, vy: 0 };
-      const angle = (i / nodes.length) * Math.PI * 2;
-      const r = Math.min(300, nodes.length * 8);
+      const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
+      const r = Math.min(260, 52 + nodes.length * 6);
       return { ...n, x: Math.cos(angle) * r, y: Math.sin(angle) * r, vx: 0, vy: 0 };
     });
     edgesRef.current = edges;
-  }, [nodes, edges]);
-
-  /* Physics tick */
-  const tick = useCallback(() => {
-    const sim = simRef.current;
-    const edgeList = edgesRef.current;
-    const enabled = enabledRef.current;
-    const vis = sim.filter((n) => enabled.has(n.type));
-    const visIds = new Set(vis.map((n) => n.id));
-
-    for (const a of vis) {
-      a.vx = 0;
-      a.vy = 0;
-
-      /* Repulsion from every other visible node */
-      for (const b of vis) {
-        if (a.id === b.id) continue;
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (dist < MIN_DIST) {
-          dx = (dx / dist) * MIN_DIST;
-          dy = (dy / dist) * MIN_DIST;
-        }
-        const force = REPULSION / (dist * dist);
-        a.vx += (dx / dist) * force;
-        a.vy += (dy / dist) * force;
-      }
-
-      /* Center gravity */
-      a.vx -= a.x * CENTER_GRAVITY;
-      a.vy -= a.y * CENTER_GRAVITY;
-    }
-
-    /* Edge attraction */
-    for (const e of edgeList) {
-      const a = sim.find((n) => n.id === e.source);
-      const b = sim.find((n) => n.id === e.target);
-      if (!a || !b || !visIds.has(a.id) || !visIds.has(b.id)) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const force = (dist - IDEAL_LENGTH) * ATTRACTION;
-      a.vx += (dx / dist) * force;
-      a.vy += (dy / dist) * force;
-      b.vx -= (dx / dist) * force;
-      b.vy -= (dy / dist) * force;
-    }
-
-    /* Integrate */
-    for (const a of vis) {
-      if (dragRef.current?.node.id === a.id) continue;
-      a.vx *= DAMPING;
-      a.vy *= DAMPING;
-      a.x += a.vx;
-      a.y += a.vy;
-    }
-  }, []);
+  }, [nodes, edges, resetKey]);
 
   /* Render loop */
   useEffect(() => {
@@ -271,12 +392,20 @@ function GraphCanvas({
     if (!ctx) return;
 
     const render = () => {
-      tick();
+      tickSimulation(
+        simRef.current,
+        edgesRef.current,
+        dragRef.current?.node.id,
+      );
 
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      const width = Math.round(rect.width * dpr);
+      const height = Math.round(rect.height * dpr);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const cx = rect.width / 2;
@@ -284,48 +413,103 @@ function GraphCanvas({
 
       ctx.clearRect(0, 0, rect.width, rect.height);
 
-      /* Subtle grid dots */
-      ctx.fillStyle = "rgba(255,255,255,0.03)";
-      for (let gx = cx % 40; gx < rect.width; gx += 40) {
-        for (let gy = cy % 40; gy < rect.height; gy += 40) {
+      /* Quiet drafting grid and orbital guides give the canvas spatial
+         structure without competing with the graph. */
+      ctx.fillStyle = "rgba(255,255,255,0.085)";
+      for (let gx = cx % 34; gx < rect.width; gx += 34) {
+        for (let gy = cy % 34; gy < rect.height; gy += 34) {
           ctx.beginPath();
-          ctx.arc(gx, gy, 1, 0, Math.PI * 2);
+          ctx.arc(gx, gy, 0.65, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      const enabled = enabledRef.current;
       const sim = simRef.current;
+      const selected = selectedRef.current;
+      const focus = focusRef.current;
+      const hasSearch = focusActiveRef.current;
+      const neighborhood = new Set<string>();
+      if (selected) {
+        neighborhood.add(selected);
+        for (const edge of edgesRef.current) {
+          if (edge.source === selected) neighborhood.add(edge.target);
+          if (edge.target === selected) neighborhood.add(edge.source);
+        }
+      }
+
+      ctx.save();
+      ctx.setLineDash([3, 8]);
+      ctx.strokeStyle = "rgba(255,255,255,0.035)";
+      for (const radius of [96, 192, 288]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
 
       /* Draw edges */
-      ctx.lineWidth = 1;
       for (const e of edgesRef.current) {
         const a = sim.find((n) => n.id === e.source);
         const b = sim.find((n) => n.id === e.target);
-        if (!a || !b || !enabled.has(a.type) || !enabled.has(b.type)) continue;
+        if (!a || !b) continue;
 
-        const grad = ctx.createLinearGradient(cx + a.x, cy + a.y, cx + b.x, cy + b.y);
-        const ca = TYPE_COLORS[a.type] ?? DEFAULT_COLOR;
-        const cb = TYPE_COLORS[b.type] ?? DEFAULT_COLOR;
-        grad.addColorStop(0, ca.fill + "40");
-        grad.addColorStop(1, cb.fill + "40");
-        ctx.strokeStyle = grad;
+        const touchesSelection = !selected || e.source === selected || e.target === selected;
+        const matchesSearch = !hasSearch || focus.has(e.source) || focus.has(e.target);
+        const emphasized = touchesSelection && matchesSearch;
+        const style = EDGE_STYLES[e.type] ?? DEFAULT_EDGE_STYLE;
+        ctx.save();
+        ctx.setLineDash(style.dash);
+        ctx.strokeStyle = style.color + (emphasized ? "c4" : "35");
+        ctx.lineWidth = emphasized ? 1.65 : 0.8;
 
         ctx.beginPath();
         ctx.moveTo(cx + a.x, cy + a.y);
         ctx.lineTo(cx + b.x, cy + b.y);
         ctx.stroke();
+
+        if (style.directed && emphasized) {
+          const angle = Math.atan2(b.y - a.y, b.x - a.x);
+          const targetRadius = NODE_RADIUS + Math.min(b.degree, 10) * 0.7 + 3;
+          const tipX = cx + b.x - Math.cos(angle) * targetRadius;
+          const tipY = cy + b.y - Math.sin(angle) * targetRadius;
+          ctx.fillStyle = style.color + "d8";
+          ctx.beginPath();
+          ctx.moveTo(tipX, tipY);
+          ctx.lineTo(
+            tipX - Math.cos(angle - Math.PI / 6) * 7,
+            tipY - Math.sin(angle - Math.PI / 6) * 7,
+          );
+          ctx.lineTo(
+            tipX - Math.cos(angle + Math.PI / 6) * 7,
+            tipY - Math.sin(angle + Math.PI / 6) * 7,
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
       }
 
       /* Draw nodes */
       for (const n of sim) {
-        if (!enabled.has(n.type)) continue;
         const c = TYPE_COLORS[n.type] ?? DEFAULT_COLOR;
-        const r = NODE_RADIUS + Math.min(n.degree, 10) * 0.6;
+        const isSelected = n.id === selected;
+        const inNeighborhood = !selected || neighborhood.has(n.id);
+        const matchesSearch = !hasSearch || focus.has(n.id);
+        const muted = !inNeighborhood || !matchesSearch;
+        const r = NODE_RADIUS + Math.min(n.degree, 10) * 0.7 + (isSelected ? 2 : 0);
 
-        /* Glow */
+        if (isSelected || (hasSearch && focus.has(n.id))) {
+          ctx.strokeStyle = c.fill + "55";
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.arc(cx + n.x, cy + n.y, r + 5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        /* Colored core with a restrained halo. */
+        ctx.globalAlpha = muted ? 0.18 : 1;
         ctx.shadowColor = c.fill;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = muted ? 0 : isSelected ? 28 : 16;
         ctx.fillStyle = c.fill;
         ctx.beginPath();
         ctx.arc(cx + n.x, cy + n.y, r, 0, Math.PI * 2);
@@ -334,14 +518,23 @@ function GraphCanvas({
 
         /* Ring */
         ctx.strokeStyle = c.stroke;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
 
-        /* Label */
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        /* Labels sit on small paper tabs so they remain legible over
+           edges without looking like a cloud of raw canvas text. */
         ctx.font = "600 10px 'Geist Mono', monospace";
         ctx.textAlign = "center";
-        ctx.fillText(n.name, cx + n.x, cy + n.y - r - 4);
+        const labelWidth = ctx.measureText(n.name).width + 12;
+        const labelX = cx + n.x - labelWidth / 2;
+        const labelY = cy + n.y + r + 7;
+        ctx.fillStyle = "rgba(10,12,11,0.88)";
+        ctx.beginPath();
+        ctx.roundRect(labelX, labelY, labelWidth, 18, 6);
+        ctx.fill();
+        ctx.fillStyle = "rgba(238,243,241,0.86)";
+        ctx.fillText(n.name, cx + n.x, labelY + 12.5);
+        ctx.globalAlpha = 1;
       }
 
       rafRef.current = requestAnimationFrame(render);
@@ -349,7 +542,7 @@ function GraphCanvas({
 
     rafRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [tick]);
+  }, []);
 
   /* Mouse interactions */
   const screenToSim = (clientX: number, clientY: number) => {
@@ -363,9 +556,7 @@ function GraphCanvas({
   };
 
   const findNode = (sx: number, sy: number): SimNode | null => {
-    const enabled = enabledRef.current;
     for (const n of simRef.current) {
-      if (!enabled.has(n.type)) continue;
       const c = canvasRef.current?.getBoundingClientRect();
       if (!c) continue;
       const nx = c.width / 2 + n.x;
@@ -387,6 +578,8 @@ function GraphCanvas({
         offsetX: pos.x - node.x,
         offsetY: pos.y - node.y,
       };
+    } else {
+      onSelect(null);
     }
   };
 
@@ -421,7 +614,7 @@ function GraphCanvas({
   };
 
   return (
-    <div className="relative flex-1 overflow-hidden rounded-2xl border border-white/8 bg-[#0d1b16]">
+    <div className="relative flex-1 overflow-hidden bg-[#0d100f]">
       <canvas
         ref={canvasRef}
         className="h-full w-full cursor-grab active:cursor-grabbing"
@@ -441,113 +634,211 @@ function DetailPanel({
   node,
   onClose,
   edges,
+  rawEdges,
   allNodes,
+  memories,
 }: {
   node: SimNode;
   onClose: () => void;
-  edges: EdgeRow[];
+  edges: SimEdge[];
+  rawEdges: EdgeRow[];
   allNodes: EntityRow[];
+  memories: Fact[];
 }) {
-  const connected = edges.filter(
-    (e) => (e.sourceId === node.id || e.targetId === node.id) && !e.validTo,
-  );
   const nodeMap = new Map(allNodes.map((n) => [n.$id, n]));
+  const memoryMap = new Map(memories.map((memory) => [memory.$id, memory]));
+  const connected = edges.flatMap((edge) => {
+    if (edge.source === node.id) {
+      const other = nodeMap.get(edge.target);
+      return other ? [{ node: other, relation: edge.type }] : [];
+    }
+    if (edge.target === node.id) {
+      const other = nodeMap.get(edge.source);
+      return other ? [{ node: other, relation: edge.type }] : [];
+    }
+    return [];
+  });
+  const evidence = rawEdges
+    .filter(
+      (edge) =>
+        !edge.validTo && edge.type === "mentioned_in" && edge.targetId === node.id,
+    )
+    .flatMap((edge) => memoryMap.get(edge.sourceId) ?? [])
+    .sort(
+      (a, b) =>
+        new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
+    );
 
   return (
-    <div className="absolute bottom-4 left-4 right-4 z-20 max-h-[40%] overflow-auto rounded-2xl border border-white/10 bg-[#0d1b16]/95 p-5 backdrop-blur-md lg:bottom-auto lg:left-auto lg:right-4 lg:top-4 lg:max-h-[70%] lg:w-80">
+    <div className="absolute bottom-4 left-4 right-4 z-20 max-h-[55%] overflow-auto rounded-2xl border border-white/10 bg-[#121514]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:left-auto sm:w-[360px] lg:bottom-auto lg:right-5 lg:top-5 lg:max-h-[76%]">
       <div className="flex items-center gap-2">
         <span
-          className="inline-block h-3 w-3 rounded-full"
+          className="inline-block h-2.5 w-2.5 rounded-full shadow-[0_0_12px_currentColor]"
           style={{ background: (TYPE_COLORS[node.type] ?? DEFAULT_COLOR).fill }}
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-white/40">
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">
           {node.type}
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto rounded-lg p-1 text-white/40 hover:bg-white/10 hover:text-white"
+          aria-label="Close node details"
+          className="ml-auto rounded-lg border border-white/8 bg-white/[0.035] p-1.5 text-forest/40 transition-colors hover:border-white/15 hover:text-forest"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <X size={13} strokeWidth={1.8} aria-hidden />
         </button>
       </div>
-      <h3 className="mt-2 text-[17px] font-semibold text-white">{node.name}</h3>
+      <h3 className="mt-3 text-[22px] font-semibold tracking-[-0.03em] text-forest">
+        {node.name}
+      </h3>
       {node.summary ? (
-        <p className="mt-1.5 text-[13px] leading-relaxed text-white/60">{node.summary}</p>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-forest/60">
+          {node.summary}
+        </p>
       ) : null}
       {connected.length > 0 ? (
-        <div className="mt-4 border-t border-white/8 pt-4">
-          <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-white/40">
+        <div className="mt-5 border-t border-forest/8 pt-4">
+          <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/40">
             Connections · {connected.length}
           </h4>
           <ul className="mt-2 flex flex-wrap gap-1.5">
-            {connected.map((e) => {
-              const otherId = e.sourceId === node.id ? e.targetId : e.sourceId;
-              const other = nodeMap.get(otherId);
-              if (!other) return null;
+            {connected.map(({ node: other, relation }) => {
               const c = TYPE_COLORS[other.type] ?? DEFAULT_COLOR;
+              const relationStyle = EDGE_STYLES[relation] ?? DEFAULT_EDGE_STYLE;
               return (
                 <li
-                  key={e.$id}
-                  className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-white/60"
+                  key={`${other.$id}:${relation}`}
+                  className="inline-flex items-center gap-1 rounded-md border border-white/8 bg-white/[0.035] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-forest/60"
                 >
                   <span className="h-2 w-2 rounded-full" style={{ background: c.fill }} />
                   {other.name}
-                  <span className="text-white/25">· {e.type}</span>
+                  <span style={{ color: relationStyle.color }} className="ml-1 opacity-75">
+                    {relationStyle.label}
+                  </span>
                 </li>
               );
             })}
           </ul>
         </div>
       ) : (
-        <p className="mt-3 text-[12px] text-white/40">No connections yet.</p>
+        <p className="mt-3 text-[12px] text-forest/40">No connections yet.</p>
       )}
+
+      <div className="mt-5 border-t border-forest/8 pt-4">
+        <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/40">
+          Evidence · {evidence.length}
+        </h4>
+        {evidence.length > 0 ? (
+          <ul className="mt-2.5 flex flex-col gap-2">
+            {evidence.slice(0, 6).map((memory) => (
+              <li
+                key={memory.$id}
+                className="rounded-xl border border-white/8 bg-white/[0.03] p-3"
+              >
+                <div className="flex items-center justify-between gap-3 font-mono text-[8px] uppercase tracking-[0.1em] text-forest/35">
+                  <span>{memory.category}</span>
+                  <time dateTime={memory.$createdAt}>
+                    {new Date(memory.$createdAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </time>
+                </div>
+                <p className="mt-1.5 line-clamp-4 text-[11px] leading-relaxed text-forest/65">
+                  {memory.content}
+                </p>
+                {memory.projectId ? (
+                  <p
+                    title={memory.projectId}
+                    className="mt-2 truncate font-mono text-[8px] uppercase tracking-[0.08em] text-forest/30"
+                  >
+                    Project · {memory.projectId}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-[11px] leading-relaxed text-forest/40">
+            No active memory evidence is linked to this node yet.
+          </p>
+        )}
+        {evidence.length > 6 ? (
+          <p className="mt-2 font-mono text-[8px] uppercase tracking-[0.1em] text-forest/35">
+            + {evidence.length - 6} more memories
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 /* ── Page ────────────────────────────────────────────────────── */
 function NodesView() {
-  const { key, error: keyError } = useBfKey();
+  const { token, error: sessionError, request } = useApiSession();
   const [entities, setEntities] = useState<EntityRow[] | null>(null);
   const [edges, setEdges] = useState<EdgeRow[] | null>(null);
+  const [memories, setMemories] = useState<Fact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [enabledTypes, setEnabledTypes] = useState<Set<string>>(
-    () => new Set(ALL_TYPES),
-  );
   const [selectedNode, setSelectedNode] = useState<SimNode | null>(null);
+  const [query, setQuery] = useState("");
+  const [resetKey, setResetKey] = useState(0);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!key) return;
+    if (!token) return;
     let active = true;
-    Promise.all([
-      bfFetch<{ entities: EntityRow[] }>(key, "/entities"),
-      bfFetch<{ edges: EdgeRow[] }>(key, "/edges").catch(() => null),
-    ])
-      .then(([e, g]) => {
+
+    loadGraphData(request, true)
+      .then((data) => {
         if (!active) return;
-        setEntities(e.entities);
-        setEdges(g ? g.edges : []);
+        setEntities(data.entities);
+        setEdges(data.edges);
+        setMemories(data.memories);
       })
       .catch((err: unknown) => {
         if (!active) return;
         setError(err instanceof Error ? err.message : "Could not load the graph.");
         setEntities([]);
         setEdges([]);
+        setMemories([]);
       });
     return () => { active = false; };
-  }, [key]);
+  }, [token, request]);
+
+  async function rebuildGraph() {
+    if (!token || rebuilding) return;
+    setRebuilding(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const result = await request<{
+        entities: EntityRow[];
+        processed: number;
+        failed: number;
+      }>("/entities/backfill", { method: "POST" });
+      const data = await loadGraphData(request, false);
+      setEntities(result.entities.length ? result.entities : data.entities);
+      setEdges(data.edges);
+      setMemories(data.memories);
+      setSelectedNode(null);
+      setResetKey((value) => value + 1);
+      setNotice(
+        result.failed > 0
+          ? `Rebuilt from ${result.processed} memories; ${result.failed} could not be processed.`
+          : `Rebuilt from ${result.processed} memories.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rebuild the graph.");
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
   const liveEdges = (edges ?? []).filter((e) => !e.validTo);
-
-  /* Build sim nodes with degree */
-  const degree = new Map<string, number>();
-  for (const e of liveEdges) {
-    degree.set(e.sourceId, (degree.get(e.sourceId) ?? 0) + 1);
-    degree.set(e.targetId, (degree.get(e.targetId) ?? 0) + 1);
-  }
 
   const simNodes: SimNode[] = (entities ?? []).map((e) => ({
     id: e.$id,
@@ -558,50 +849,111 @@ function NodesView() {
     y: 0,
     vx: 0,
     vy: 0,
-    degree: degree.get(e.$id) ?? 0,
+    degree: 0,
   }));
 
-  const simEdges: SimEdge[] = liveEdges.map((e) => ({
-    source: e.sourceId,
-    target: e.targetId,
-  }));
-
-  /* Groups for community panel */
-  const groups = ALL_TYPES
-    .map((t) => ({
-      type: t,
-      count: simNodes.filter((n) => n.type === t).length,
-      nodes: simNodes.filter((n) => n.type === t),
-    }))
-    .filter((g) => g.count > 0)
-    .sort((a, b) => b.count - a.count);
-
-  const toggleType = (t: string) => {
-    setEnabledTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next;
-    });
+  const entityIds = new Set(simNodes.map((node) => node.id));
+  const simEdgeIndexes = new Map<string, number>();
+  const simEdges: SimEdge[] = [];
+  const addSimEdge = (source: string, target: string, type: string) => {
+    if (source === target) return;
+    const key = [source, target].sort().join(":");
+    const existingIndex = simEdgeIndexes.get(key);
+    if (existingIndex !== undefined) {
+      if (simEdges[existingIndex].type === "co_mentioned" && type !== "co_mentioned") {
+        simEdges[existingIndex] = { source, target, type };
+      }
+      return;
+    }
+    simEdgeIndexes.set(key, simEdges.length);
+    simEdges.push({ source, target, type });
   };
 
-  const isEmpty = simNodes.length === 0 && !error && !keyError;
+  const mentionsByMemory = new Map<string, string[]>();
+  for (const edge of liveEdges) {
+    if (edge.type === "mentioned_in" && entityIds.has(edge.targetId)) {
+      const targets = mentionsByMemory.get(edge.sourceId) ?? [];
+      targets.push(edge.targetId);
+      mentionsByMemory.set(edge.sourceId, targets);
+    } else if (entityIds.has(edge.sourceId) && entityIds.has(edge.targetId)) {
+      addSimEdge(edge.sourceId, edge.targetId, edge.type);
+    }
+  }
+
+  for (const targets of mentionsByMemory.values()) {
+    const uniqueTargets = [...new Set(targets)];
+    for (let i = 0; i < uniqueTargets.length; i++) {
+      for (let j = i + 1; j < uniqueTargets.length; j++) {
+        addSimEdge(uniqueTargets[i], uniqueTargets[j], "co_mentioned");
+      }
+    }
+  }
+
+  for (const edge of simEdges) {
+    const source = simNodes.find((node) => node.id === edge.source);
+    const target = simNodes.find((node) => node.id === edge.target);
+    if (source) source.degree++;
+    if (target) target.degree++;
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const focusIds = new Set(
+    normalizedQuery
+      ? simNodes
+          .filter((node) =>
+            `${node.name} ${node.type} ${node.summary ?? ""}`
+              .toLowerCase()
+              .includes(normalizedQuery),
+          )
+          .map((node) => node.id)
+      : [],
+  );
+
+  const typeCounts = TYPE_ORDER.map((type) => ({
+    type,
+    count: simNodes.filter((node) => node.type === type).length,
+  })).filter((group) => group.count > 0);
+  const relationCounts = Object.entries(
+    simEdges.reduce<Record<string, number>>((counts, edge) => {
+      counts[edge.type] = (counts[edge.type] ?? 0) + 1;
+      return counts;
+    }, {}),
+  )
+    .map(([type, count]) => ({
+      type,
+      count,
+      style: EDGE_STYLES[type] ?? DEFAULT_EDGE_STYLE,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const isEmpty = simNodes.length === 0 && !error && !sessionError;
 
   return (
     <AppShell
-      title="Nodes"
-      intro="A force-directed view of your knowledge graph — drag nodes, filter communities, double-click to inspect."
+      title="Memory Graph"
+      intro="Explore the systems, tools and ideas that recur across your memory."
+      wide
+      immersive
     >
-      {error ?? keyError ? (
+      {error ?? sessionError ? (
         <p
           role="alert"
-          className="mb-6 rounded-xl border border-red-300 bg-red-50 p-4 text-[13px] text-red-800"
+          className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200"
         >
-          {error ?? keyError}
+          {error ?? sessionError}
         </p>
       ) : null}
 
-      {entities === null && !error && !keyError ? (
+      {notice ? (
+        <p
+          aria-live="polite"
+          className="mb-6 rounded-xl border border-emerald/30 bg-mint/15 p-4 text-[13px] text-forest"
+        >
+          {notice}
+        </p>
+      ) : null}
+
+      {entities === null && !error && !sessionError ? (
         <output
           aria-live="polite"
           className="block font-mono text-[11px] uppercase tracking-[0.1em] text-forest/45"
@@ -609,38 +961,150 @@ function NodesView() {
           Loading…
         </output>
       ) : isEmpty ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <p className="text-[15px] text-forest/60">
-            No nodes yet. Save facts that mention tools, languages or concepts — they appear here automatically.
-          </p>
-          <p className="mt-2 font-mono text-[11px] text-forest/35">
-            Or add a node manually on the Graph page.
-          </p>
-        </div>
-      ) : (
-        <div className="flex gap-4" style={{ height: "calc(100vh - 12rem)" }}>
-          <GraphCanvas
-            nodes={simNodes}
-            edges={simEdges}
-            enabledTypes={enabledTypes}
-            onSelect={setSelectedNode}
-          />
-          <div className="hidden flex-col lg:flex">
-            <CommunityPanel
-              groups={groups}
-              enabled={enabledTypes}
-              onToggle={toggleType}
+        <section className="relative flex min-h-[620px] h-[calc(100dvh-8rem)] max-h-[940px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d100f] shadow-[0_28px_90px_rgba(0,0,0,0.34)]">
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.085)_0.7px,transparent_0.7px)] bg-[size:34px_34px]" />
+          <div className="relative m-auto flex min-h-[340px] w-[min(88%,560px)] flex-col items-center justify-center rounded-xl border border-white/10 bg-[#111412]/72 px-10 py-16 text-center shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-sm">
+            <Network className="mx-auto text-forest/20" size={38} strokeWidth={1.2} aria-hidden />
+            <h2 className="mt-5 text-[18px] font-semibold text-forest/85">No graph data yet</h2>
+            <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-forest/40">
+              Save memories that mention tools, projects, people or patterns. Brainfeather will
+              build the graph automatically.
+            </p>
+            <button
+              type="button"
+              onClick={rebuildGraph}
+              disabled={rebuilding}
+              className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg border border-emerald/25 bg-emerald/10 px-4 font-mono text-[9px] uppercase tracking-[0.1em] text-emerald transition-colors hover:bg-emerald/15 disabled:opacity-50"
+            >
+              <RefreshCw
+                size={13}
+                strokeWidth={1.8}
+                aria-hidden
+                className={rebuilding ? "animate-spin" : undefined}
+              />
+              {rebuilding ? "Building graph" : "Build from memories"}
+            </button>
+          </div>
+          <div className="absolute bottom-4 left-4">
+            <GraphLegend
+              nodeCount={0}
+              edgeCount={0}
+              evidenceCount={memories?.length ?? 0}
+              typeCounts={[]}
+              relationCounts={[]}
             />
           </div>
-          {selectedNode ? (
-            <DetailPanel
-              node={selectedNode}
-              onClose={() => setSelectedNode(null)}
-              edges={liveEdges}
-              allNodes={entities ?? []}
+        </section>
+      ) : (
+        <section className="relative flex min-h-[620px] h-[calc(100dvh-6rem)] max-h-[980px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d100f] shadow-[0_28px_90px_rgba(0,0,0,0.34)]">
+          <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-3 rounded-lg border border-white/[0.08] bg-[#151817]/88 px-3 py-2 shadow-[0_12px_38px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/50">
+              {simNodes.length} nodes
+            </span>
+            <span className="h-3 w-px bg-white/10" />
+            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">
+              {simEdges.length} links
+            </span>
+          </div>
+
+          <div className="absolute right-4 top-4 z-30 flex max-w-[calc(100%-2rem)] items-center gap-2">
+            <label className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
+              <span className="sr-only">Search nodes</span>
+              <Search
+                size={14}
+                strokeWidth={1.8}
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-forest/35"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Find a node"
+                className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#151817]/92 pl-8 pr-8 text-[11px] text-forest shadow-[0_12px_38px_rgba(0,0,0,0.28)] outline-none backdrop-blur-xl placeholder:text-forest/25 focus:border-emerald/35"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear node search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-forest/35 hover:bg-white/[0.05] hover:text-forest"
+                >
+                  <X size={12} strokeWidth={1.8} aria-hidden />
+                </button>
+              ) : null}
+            </label>
+            <button
+              type="button"
+              onClick={rebuildGraph}
+              disabled={rebuilding}
+              title="Rebuild graph"
+              aria-label="Rebuild graph"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/[0.09] bg-[#151817]/92 text-forest/45 shadow-[0_12px_38px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-colors hover:border-white/15 hover:text-forest disabled:cursor-wait disabled:opacity-50"
+            >
+              <RefreshCw
+                size={14}
+                strokeWidth={1.8}
+                aria-hidden
+                className={rebuilding ? "animate-spin" : undefined}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setResetKey((value) => value + 1);
+                setSelectedNode(null);
+              }}
+              title="Recenter graph"
+              aria-label="Recenter graph"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/[0.09] bg-[#151817]/92 text-forest/45 shadow-[0_12px_38px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-colors hover:border-white/15 hover:text-forest"
+            >
+              <LocateFixed size={14} strokeWidth={1.8} aria-hidden />
+            </button>
+          </div>
+
+          <div className="relative flex min-h-0 flex-1">
+            <GraphCanvas
+              nodes={simNodes}
+              edges={simEdges}
+              selectedId={selectedNode?.id ?? null}
+              focusIds={focusIds}
+              focusActive={Boolean(normalizedQuery)}
+              resetKey={resetKey}
+              onSelect={setSelectedNode}
             />
-          ) : null}
-        </div>
+
+            <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex items-end justify-between gap-4">
+              <GraphLegend
+                nodeCount={simNodes.length}
+                edgeCount={simEdges.length}
+                evidenceCount={memories?.length ?? 0}
+                typeCounts={typeCounts}
+                relationCounts={relationCounts}
+              />
+              <span className="hidden rounded-lg border border-white/8 bg-[#151817]/80 px-3 py-1.5 font-mono text-[8px] uppercase tracking-[0.1em] text-forest/35 backdrop-blur-sm sm:block">
+                Drag to arrange · click to inspect
+              </span>
+            </div>
+
+            {normalizedQuery && focusIds.size === 0 ? (
+              <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 rounded-lg border border-white/10 bg-[#151817]/95 px-4 py-2 text-[11px] text-forest/55 shadow-sm backdrop-blur-xl">
+                No nodes match “{query.trim()}”
+              </div>
+            ) : null}
+
+            {selectedNode ? (
+              <DetailPanel
+                node={selectedNode}
+                onClose={() => setSelectedNode(null)}
+                edges={simEdges}
+                rawEdges={liveEdges}
+                allNodes={entities ?? []}
+                memories={memories ?? []}
+              />
+            ) : null}
+          </div>
+        </section>
       )}
     </AppShell>
   );

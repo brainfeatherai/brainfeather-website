@@ -14,8 +14,10 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { traverseGraph } from '@/lib/server/memory-store';
+import { reportServerError } from '@/lib/server/report-error';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 
-export async function GET(
+async function traverseGraphRoute(
   request: Request,
   { params }: { params: Promise<{ entityId: string }> },
 ) {
@@ -25,14 +27,23 @@ export async function GET(
   // A promise in this Next version — see docs/.../route.md.
   const { entityId } = await params;
 
-  const raw = Number(new URL(request.url).searchParams.get('depth'));
+  const searchParams = new URL(request.url).searchParams;
+  const raw = Number(searchParams.get('depth'));
   const depth = Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), 3) : 1;
+  const projectId = searchParams.get('projectId') ?? undefined;
+  const strictScope = searchParams.get('strictScope') === 'true';
+  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
 
   try {
     /* traverseGraph filters every edge and entity by userId, so a
        guessed entityId belonging to someone else returns an empty
        subgraph rather than their data. */
-    const { entities, edges } = await traverseGraph(auth.userId, entityId, depth);
+    const { entities, edges } = await traverseGraph(
+      auth.userId,
+      entityId,
+      depth,
+      strictScope ? projectId : undefined,
+    );
 
     return Response.json({
       root: entityId,
@@ -42,7 +53,15 @@ export async function GET(
       counts: { entities: entities.length, edges: edges.length },
     });
   } catch (err) {
-    console.error('[api/v1/graph/traverse] failed:', err);
+    reportServerError(err, {
+      operation: 'graph.traverse',
+      route: '/api/v1/graph/traverse/:entityId',
+      userId: auth.userId,
+      resourceId: entityId,
+      tags: { depth, strict_scope: strictScope },
+    });
     return fail(500, 'Could not traverse the graph.');
   }
 }
+
+export const GET = withRequestTelemetry('graph.traverse', traverseGraphRoute);

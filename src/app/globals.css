@@ -13,22 +13,6 @@
   --foreground: var(--forest);
 }
 
-/* ── Dark mode ─────────────────────────────────────────────────
-   Toggled via a `dark` class on <html>. Keeps the same palette
-   names so every Tailwind utility that references them (text-forest,
-   bg-paper, etc.) recolours automatically. */
-html.dark {
-  --forest: #e8ede9;
-  --forest-deep: #0d1b16;
-  --emerald: #5bb98c;
-  --mint: #3a7d5e;
-  --paper: #0d1b16;
-  --paper-dim: #132a21;
-
-  --background: #0d1b16;
-  --foreground: #e8ede9;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -59,6 +43,43 @@ body {
   color: var(--foreground);
   font-family: var(--font-outfit), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Authenticated workspace ────────────────────────────────────
+   Scoped to AppShell so the public site and sign-in flow retain the
+   warm paper brand. Product pages reuse the semantic palette tokens as
+   a dense, high-contrast operations workspace. */
+.workspace-theme {
+  --forest: #eef3f1;
+  --forest-deep: #070908;
+  --emerald: #62d5a5;
+  --mint: #237555;
+  --paper: #111413;
+  --paper-dim: #181c1a;
+  --background: #080a09;
+  --foreground: #eef3f1;
+
+  min-height: 100dvh;
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at 76% 3%, rgba(55, 128, 95, 0.11), transparent 30rem),
+    var(--background);
+  color: var(--foreground);
+}
+
+.workspace-theme .hairline {
+  border-color: rgba(238, 243, 241, 0.09);
+}
+
+.workspace-theme input,
+.workspace-theme textarea,
+.workspace-theme select {
+  color-scheme: dark;
+}
+
+.workspace-grid {
+  background-image: radial-gradient(rgba(238, 243, 241, 0.04) 0.75px, transparent 0.75px);
+  background-size: 26px 26px;
 }
 
 /* ── Hero: forest → mint wash behind fluted glass ──────────────────
@@ -248,10 +269,6 @@ body {
 .hairline {
   border-color: color-mix(in oklab, var(--forest) 12%, transparent);
 }
-html.dark .hairline {
-  border-color: color-mix(in oklab, var(--foreground) 10%, transparent);
-}
-
 /* ── section rule ──────────────────────────────────────────────
    A flat 1px border edge-to-edge is the thing that reads cheap: it
    ends abruptly against the page margins. This fades out at both

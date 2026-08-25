@@ -24,6 +24,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -34,6 +35,9 @@ type SessionUser = Models.User<Models.Preferences>;
 
 type AuthState = {
   user: SessionUser | null;
+  jwt: string | null;
+  jwtError: string | null;
+  refreshJwt: () => Promise<string | null>;
   /** True until the initial session probe settles. Distinct from "no user". */
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -45,16 +49,53 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [jwt, setJwt] = useState<string | null>(null);
+  const [jwtError, setJwtError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const authGeneration = useRef(0);
+  const refreshInFlight = useRef<{
+    generation: number;
+    promise: Promise<string | null>;
+  } | null>(null);
+
+  const refreshJwt = useCallback(() => {
+    const generation = authGeneration.current;
+    if (refreshInFlight.current?.generation === generation) {
+      return refreshInFlight.current.promise;
+    }
+    const work = (async () => {
+      try {
+        const result = await authService.createJWT();
+        if (generation !== authGeneration.current) return null;
+        setJwt(result.jwt);
+        setJwtError(null);
+        return result.jwt;
+      } catch (error) {
+        if (generation !== authGeneration.current) return null;
+        /* Keep the existing token: it may still be valid. A transient
+           refresh failure should not immediately take the dashboard down. */
+        setJwtError(
+          error instanceof Error ? error.message : "Could not refresh dashboard access.",
+        );
+        return null;
+      }
+    })().finally(() => {
+      if (refreshInFlight.current?.promise === work) refreshInFlight.current = null;
+    });
+    refreshInFlight.current = { generation, promise: work };
+    return work;
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const generation = authGeneration.current;
     // getCurrentUser() swallows the 401 that Appwrite throws for an
     // anonymous visitor and returns null, so no try/catch needed here.
-    authService.getCurrentUser().then((u) => {
-      if (!active) return;
+    authService.getCurrentUser().then(async (u) => {
+      if (!active || generation !== authGeneration.current) return;
       setUser(u);
-      setLoading(false);
+      if (u) await refreshJwt();
+      if (active && generation === authGeneration.current) setLoading(false);
 
       /* An OAuth signup never runs createEmailPassword, so nothing has
          created its `users` row. This is the one place that observes a
@@ -70,30 +111,60 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshJwt]);
+
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => void refreshJwt(), 45 * 60 * 1000);
+    const retryTimer = jwtError
+      ? window.setInterval(() => void refreshJwt(), 5 * 60 * 1000)
+      : null;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshJwt();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      if (retryTimer !== null) window.clearInterval(retryTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user, jwtError, refreshJwt]);
 
   const login = useCallback(async (email: string, password: string) => {
+    const generation = ++authGeneration.current;
     await authService.createEmailSession(email, password);
-    setUser(await authService.getCurrentUser());
-  }, []);
+    const current = await authService.getCurrentUser();
+    if (generation !== authGeneration.current) return;
+    setUser(current);
+    if (current) await refreshJwt();
+  }, [refreshJwt]);
 
   const signup = useCallback(
     async (email: string, password: string, name: string) => {
+      const generation = ++authGeneration.current;
       await authService.createEmailPassword(email, password, name);
       // create() does not open a session; the caller must sign in.
       await authService.createEmailSession(email, password);
-      setUser(await authService.getCurrentUser());
+      const current = await authService.getCurrentUser();
+      if (generation !== authGeneration.current) return;
+      setUser(current);
+      if (current) await refreshJwt();
     },
-    [],
+    [refreshJwt],
   );
 
   const logout = useCallback(async () => {
-    await authService.logout();
+    authGeneration.current++;
     setUser(null);
+    setJwt(null);
+    setJwtError(null);
+    await authService.logout();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{ user, jwt, jwtError, refreshJwt, loading, login, signup, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -120,7 +191,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <output
         aria-live="polite"
-        className="flex min-h-[60vh] items-center justify-center font-mono text-[11px] uppercase tracking-[0.1em] text-forest/45"
+        className="flex min-h-dvh items-center justify-center bg-[#080a09] font-mono text-[11px] uppercase tracking-[0.1em] text-[#eef3f1]/45"
       >
         {loading ? "Checking session…" : "Redirecting…"}
       </output>

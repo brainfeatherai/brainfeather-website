@@ -104,6 +104,86 @@ const AMBIGUOUS = new Set(['go', 'rust', 'next', 'solid', 'spring', 'fly', 'rest
    every entry is a phrase that only precedes or follows a tech noun. */
 const TECH_CUE = /\b(use[sd]?|using|written in|built (?:in|with)|migrat\w+ to|switch\w* to|rewrit\w+ in|port\w* to|stack|backend|frontend|runtime|framework|language|server|api|deploy\w*|prefer|standard|convention)\b/i;
 
+/* Dynamic names are accepted only behind explicit labels. Guessing from
+   capitalization made ordinary prose into people and projects; these
+   forms require the author to say what the name represents. */
+const NAMED_PROJECT = [
+  /\bproject\s*(?::|=|named\s+|called\s+)\s*["'`]([^"'`\n]{2,80})["'`]/gi,
+  /\bproject\s*(?::|=|named\s+|called\s+)\s*([A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9_-]+)*(?:\s+[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9_-]+)*){0,3}?)(?=\s+(?:uses?|is|has|runs?|depends?|deploys?|with|on|for)\b|[,.!;:]|$)/gi,
+  /\bproject\s+([A-Z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*(?:\s+[A-Z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*){0,2})(?=\s+(?:uses?|is|has|runs?|depends?|deploys?|with|on|for)\b|[,.!;:]|$)/g,
+  /\b((?:The\s+)?[A-Z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*(?:\s+[A-Z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*){0,2})\s+project\b/g,
+];
+
+const NAMED_REPOSITORY = [
+  /https?:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/gi,
+  /\b(?:repo|repository)\s*(?::|=|named\s+|called\s+)?\s*["'`]?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)["'`]?/gi,
+  /\b(?:repo|repository)\s*(?::|=|named\s+|called\s+)\s*["'`]([^"'`\n]{2,80})["'`]/gi,
+  /\b(?:repo|repository)\s*(?::|=|named\s+|called\s+)\s*([A-Za-z0-9][A-Za-z0-9._-]{1,79})/gi,
+];
+
+const NAMED_PERSON = [
+  /\b(?:person|maintainer|tech\s+lead|project\s+lead|contact)\s*(?::|=|named\s+|called\s+)\s*["'`]([^"'`\n]{2,80})["'`]/gi,
+  /\b(?:person|maintainer|tech\s+lead|project\s+lead|contact)\s*(?::|=|named\s+|called\s+)\s*(@[A-Za-z0-9_-]{2,39}|[A-Z][A-Za-z'’-]*(?:\s+[A-Z][A-Za-z'’-]*){0,3})/gi,
+];
+
+const KNOWN_PATTERNS: { name: string; pattern: RegExp }[] = [
+  { name: 'event sourcing', pattern: /\bevent[- ]sourcing\b/i },
+  { name: 'cqrs', pattern: /\bcqrs\b/i },
+  { name: 'model view controller', pattern: /\b(?:model[- ]view[- ]controller|mvc)\b/i },
+  { name: 'clean architecture', pattern: /\bclean architecture\b/i },
+  { name: 'hexagonal architecture', pattern: /\b(?:hexagonal architecture|ports and adapters)\b/i },
+  { name: 'repository pattern', pattern: /\brepository pattern\b/i },
+  { name: 'unit of work', pattern: /\bunit of work\b/i },
+  { name: 'domain driven design', pattern: /\b(?:domain[- ]driven design|ddd)\b/i },
+  { name: 'event driven architecture', pattern: /\bevent[- ]driven architecture\b/i },
+  { name: 'microservices architecture', pattern: /\bmicroservices architecture\b/i },
+  { name: 'circuit breaker', pattern: /\bcircuit breaker(?: pattern)?\b/i },
+  { name: 'transactional outbox', pattern: /\b(?:transactional )?outbox pattern\b/i },
+  { name: 'saga pattern', pattern: /\bsaga pattern\b/i },
+  { name: 'publish subscribe', pattern: /\b(?:publish[- ]subscribe|pub\/sub)\b/i },
+];
+
+const INVALID_DYNAMIC_NAMES = new Set([
+  'a',
+  'an',
+  'none',
+  'our',
+  'the',
+  'this',
+  'unknown',
+]);
+
+function normalizeDynamicName(raw: string, type: EntityType): string | null {
+  let name = raw
+    .trim()
+    .replace(/^(?:the|our)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+  /* GitHub URLs can leave punctuation at the end of a repository slug. */
+  name = name.replace(/[.,;:!?]+$/, '').replace(/\.git$/i, '');
+  if (name.length < 2 || name.length > 100 || INVALID_DYNAMIC_NAMES.has(name)) return null;
+  if (type === 'person' && !/^@?[a-z][a-z'’ _-]*$/i.test(name)) return null;
+  if ((type === 'project' || type === 'person') && /^(?:uses?|is|has|with|on|for)$/.test(name)) {
+    return null;
+  }
+  return name;
+}
+
+function collectNamed(
+  content: string,
+  patterns: RegExp[],
+  type: EntityType,
+  keep: (hit: { name: string; type: EntityType }) => void,
+): void {
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      const name = normalizeDynamicName(match[1], type);
+      if (name) keep({ name, type });
+    }
+  }
+}
+
 /** Resolve one surface form to its canonical name, or null. */
 function resolve(
   raw: string,
@@ -128,9 +208,6 @@ function resolve(
 }
 
 export function extractEntities(content: string): { name: string; type: EntityType }[] {
-  /* Sentence-level rather than adjacent-word, because "the backend is
-     written in Go" puts the cue five tokens from the term. */
-  const hasCue = TECH_CUE.test(content);
   const words = content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
   const found = new Map<string, EntityType>();
@@ -139,6 +216,12 @@ export function extractEntities(content: string): { name: string; type: EntityTy
   };
 
   for (let i = 0; i < words.length; i++) {
+    /* Ambiguous words need a LOCAL technical cue. A whole-memory cue made
+       "uses React and the next step" invent Next.js; a seven-word window
+       still sees "written in Go" without leaking across clauses. */
+    const hasCue = TECH_CUE.test(
+      words.slice(Math.max(0, i - 3), Math.min(words.length, i + 3)).join(' '),
+    );
     /* Longest match wins. A bigram that resolves CONSUMES both tokens,
        so "Next.js" -> ["next","js"] yields nextjs and nothing else.
        Considering the unigram as well left the trailing "js" free to
@@ -154,6 +237,13 @@ export function extractEntities(content: string): { name: string; type: EntityTy
 
     const single = resolve(words[i], hasCue);
     if (single) keep(single);
+  }
+
+  collectNamed(content, NAMED_PROJECT, 'project', keep);
+  collectNamed(content, NAMED_REPOSITORY, 'project', keep);
+  collectNamed(content, NAMED_PERSON, 'person', keep);
+  for (const entry of KNOWN_PATTERNS) {
+    if (entry.pattern.test(content)) keep({ name: entry.name, type: 'pattern' });
   }
 
   return [...found].map(([name, type]) => ({ name, type }));

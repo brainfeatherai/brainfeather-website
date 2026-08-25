@@ -1,5 +1,7 @@
 "use server";
 
+import { reportServerError } from "@/lib/server/report-error";
+
 /* ────────────────────────────────────────────────────────────────
    Waitlist capture.
 
@@ -113,7 +115,10 @@ export async function joinWaitlist(
     /* Logged server-side with detail; the browser gets a sentence it can
        act on. Never surface the Appwrite error — it names collections and
        occasionally echoes configuration. */
-    console.error("[waitlist] could not record submission:", err);
+    reportServerError(err, {
+      operation: "waitlist.submit",
+      route: "/",
+    });
     return {
       status: "error",
       message: "Couldn't save that. Try again in a moment?",

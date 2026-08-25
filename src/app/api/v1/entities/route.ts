@@ -11,24 +11,33 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { authenticate, fail } from '@/lib/server/api-auth';
-import { listEntities, upsertEntity } from '@/lib/server/memory-store';
-import { ENTITY_TYPES, oneOf, readJson, str } from '@/lib/server/validate';
+import { listEntities, listProjectEntities, upsertEntity } from '@/lib/server/memory-store';
+import { reportServerError } from '@/lib/server/report-error';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
+import { ENTITY_TYPES, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
 
-export async function GET(request: Request) {
+async function listEntitiesRoute(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
   const rawType = new URL(request.url).searchParams.get('type');
+  const params = new URL(request.url).searchParams;
+  const projectId = params.get('projectId') ?? undefined;
+  const strictScope = params.get('strictScope') === 'true';
+  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   if (rawType) {
     const parsed = oneOf(rawType, ENTITY_TYPES, 'type');
     if (!parsed.ok) return fail(400, parsed.error);
   }
 
-  const entities = await listEntities(auth.userId, rawType ?? undefined);
+  const entities =
+    strictScope && projectId
+      ? await listProjectEntities(auth.userId, projectId, rawType ?? undefined)
+      : await listEntities(auth.userId, rawType ?? undefined);
   return Response.json({ entities, count: entities.length });
 }
 
-export async function POST(request: Request) {
+async function upsertEntityRoute(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
@@ -37,6 +46,8 @@ export async function POST(request: Request) {
 
   const name = str(body.name, 'name', { min: 1, max: 100 });
   if (!name.ok) return fail(400, name.error);
+  const unsafeName = secretReason(name.value);
+  if (unsafeName) return fail(400, `Refusing to store entity name: ${unsafeName}.`);
 
   const type = oneOf(body.type, ENTITY_TYPES, 'type');
   if (!type.ok) return fail(400, type.error);
@@ -46,6 +57,8 @@ export async function POST(request: Request) {
     const parsed = str(body.summary, 'summary', { min: 1, max: 500 });
     if (!parsed.ok) return fail(400, parsed.error);
     summary = parsed.value;
+    const unsafeSummary = secretReason(summary);
+    if (unsafeSummary) return fail(400, `Refusing to store entity summary: ${unsafeSummary}.`);
   }
 
   try {
@@ -60,7 +73,15 @@ export async function POST(request: Request) {
     );
     return Response.json({ entity });
   } catch (err) {
-    console.error('[api/v1/entities] upsert failed:', err);
+    reportServerError(err, {
+      operation: 'entity.upsert',
+      route: '/api/v1/entities',
+      userId: auth.userId,
+      tags: { entity_type: type.value },
+    });
     return fail(500, 'Could not save the entity.');
   }
 }
+
+export const GET = withRequestTelemetry('entity.list', listEntitiesRoute);
+export const POST = withRequestTelemetry('entity.upsert', upsertEntityRoute);

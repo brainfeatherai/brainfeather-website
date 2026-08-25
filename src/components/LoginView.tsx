@@ -114,7 +114,7 @@ export default function LoginView({ oauthFailed }: { oauthFailed: boolean }) {
 
   // Already signed in? Skip the form. A navigation, not a state write.
   useEffect(() => {
-    if (!loading && user) router.replace("/dashboard");
+    if (!loading && user) router.replace("/overview");
   }, [loading, user, router]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -124,7 +124,7 @@ export default function LoginView({ oauthFailed }: { oauthFailed: boolean }) {
     try {
       if (isSignup) await signup(email, password, name.trim());
       else await login(email, password);
-      router.replace("/dashboard");
+      router.replace("/overview");
     } catch (err) {
       setError(readableError(err));
       setPending(false); // still mounted on failure, so re-enable

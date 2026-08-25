@@ -57,6 +57,20 @@ in — a mismatch 404s every call. Bangalore is announced but not yet available;
 Singapore (`https://sgp.cloud.appwrite.io/v1`) is the closest live region to
 India.
 
+## API key storage rollout
+
+Editor keys are managed through JWT-authenticated server routes and can be stored as
+SHA-256 digests. Roll out without breaking active editors:
+
+1. Add a unique index on `api_keys.key` and deploy with
+   `BRAINFEATHER_API_KEY_STORAGE=compatibility`. This reads both formats but leaves
+   existing rows and new writes in plaintext, making the release rollback-safe.
+2. Verify dashboard JWT access and existing editor keys.
+3. Set `BRAINFEATHER_API_KEY_STORAGE=hashed`, redeploy the same code, and open Settings
+   once per account (or run an admin migration) to hash legacy rows.
+4. Confirm no plaintext rows remain before removing the compatibility lookup in a later
+   release.
+
 ## Known gaps
 
 - **The legal pages are drafts.** Both carry a visible banner and highlighted
@@ -64,10 +78,6 @@ India.
   registered address, retention window, governing law, liability cap. They are
   drafted around a UK/EU framing and need review against the actual operating
   jurisdiction before publication.
-- **`src/services/appwrite.ts` is not wired to anything** — no page imports it.
-  Two things to fix before it is: API keys are stored in plaintext (store a hash
-  instead), and they are generated from `ID.unique()`, which is timestamp-based
-  rather than cryptographically random.
 - **The confirmation email has never been executed.** It needs one real signup
   against a deployed Apps Script to verify.
 - The favicon is still the `create-next-app` default.

@@ -18,9 +18,11 @@ import { Query } from 'node-appwrite';
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { adminDb, DATABASE_ID, COLLECTIONS } from '@/lib/server/appwrite-admin';
 import { createEdge } from '@/lib/server/memory-store';
+import { reportServerError } from '@/lib/server/report-error';
+import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { EDGE_TYPES, oneOf, readJson, str } from '@/lib/server/validate';
 
-export async function GET(request: Request) {
+async function listEdges(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
@@ -37,7 +39,7 @@ export async function GET(request: Request) {
   return Response.json({ edges: res.documents, count: res.documents.length });
 }
 
-export async function POST(request: Request) {
+async function createEdgeRoute(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
@@ -78,7 +80,15 @@ export async function POST(request: Request) {
     );
     return Response.json({ edge });
   } catch (err) {
-    console.error('[api/v1/edges] create failed:', err);
+    reportServerError(err, {
+      operation: 'edge.create',
+      route: '/api/v1/edges',
+      userId: auth.userId,
+      tags: { edge_type: type.value },
+    });
     return fail(500, 'Could not create the edge.');
   }
 }
+
+export const GET = withRequestTelemetry('edge.list', listEdges);
+export const POST = withRequestTelemetry('edge.create', createEdgeRoute);

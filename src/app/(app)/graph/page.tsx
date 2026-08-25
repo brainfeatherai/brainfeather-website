@@ -20,20 +20,19 @@ import { Plus, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
-  bfFetch,
-  useBfKey,
+  useApiSession,
   type EdgeRow,
   type EntityRow,
   type Fact,
 } from "@/lib/api-client";
 
 const TYPE_ACCENT: Record<string, string> = {
-  tool: "bg-mint/25 text-forest",
-  language: "bg-emerald/15 text-forest",
-  concept: "bg-forest/8 text-forest/80",
-  person: "bg-amber-100 text-amber-900",
-  project: "bg-sky-100 text-sky-900",
-  pattern: "bg-violet-100 text-violet-900",
+  tool: "border border-emerald/20 bg-emerald/10 text-emerald",
+  language: "border border-cyan-400/20 bg-cyan-400/10 text-cyan-200",
+  concept: "border border-violet-400/20 bg-violet-400/10 text-violet-200",
+  person: "border border-amber-400/20 bg-amber-400/10 text-amber-200",
+  project: "border border-sky-400/20 bg-sky-400/10 text-sky-200",
+  pattern: "border border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-200",
 };
 
 const ENTITY_TYPES = ["tool", "language", "concept", "person", "project", "pattern"];
@@ -43,17 +42,17 @@ const ENTITY_TYPES = ["tool", "language", "concept", "person", "project", "patte
 const EDGE_TYPES = ["related_to", "depends_on", "part_of", "uses", "contradicts", "supersedes"];
 
 const FIELD =
-  "hairline h-11 w-full rounded-full border bg-paper px-5 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
+  "hairline h-11 w-full rounded-lg border bg-paper px-4 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
 
 const PILL =
-  "hairline rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50";
+  "hairline rounded-md border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50";
 
 function accent(type: string): string {
   return TYPE_ACCENT[type] ?? "bg-mint/25 text-forest";
 }
 
 function GraphView() {
-  const { key, error: keyError } = useBfKey();
+  const { token, error: sessionError, request } = useApiSession();
   const [entities, setEntities] = useState<EntityRow[] | null>(null);
   const [edges, setEdges] = useState<EdgeRow[] | null>(null);
   const [memories, setMemories] = useState<Fact[] | null>(null);
@@ -74,17 +73,17 @@ function GraphView() {
 
   /* Pure fetch; setState happens in the caller so the effect body never
      sets state synchronously (react-hooks/set-state-in-effect). */
-  const fetchAll = useCallback(async (apiKey: string) => {
+  const fetchAll = useCallback(async () => {
     return Promise.all([
-      bfFetch<{ entities: EntityRow[] }>(apiKey, "/entities"),
-      bfFetch<{ edges: EdgeRow[] }>(apiKey, "/edges").catch(() => null),
-      bfFetch<{ memories: Fact[] }>(apiKey, "/memories?limit=100").catch(() => null),
+      request<{ entities: EntityRow[] }>("/entities"),
+      request<{ edges: EdgeRow[] }>("/edges").catch(() => null),
+      request<{ memories: Fact[] }>("/memories?limit=100").catch(() => null),
     ]);
-  }, []);
+  }, [request]);
 
   const load = useCallback(
-    async (apiKey: string) => {
-      const [e, g, m] = await fetchAll(apiKey);
+    async () => {
+      const [e, g, m] = await fetchAll();
       setEntities(e.entities);
       setEdges(g ? g.edges : []);
       setMemories(m ? m.memories : []);
@@ -93,9 +92,9 @@ function GraphView() {
   );
 
   useEffect(() => {
-    if (!key) return;
+    if (!token) return;
     let active = true;
-    fetchAll(key)
+    fetchAll()
       .then(([e, g, m]) => {
         if (!active) return;
         setEntities(e.entities);
@@ -112,7 +111,7 @@ function GraphView() {
     return () => {
       active = false;
     };
-  }, [key, fetchAll]);
+  }, [token, fetchAll]);
 
   /* Superseded edges are filtered here because Appwrite cannot express
      `validTo IS NULL` in a query — same rule the server traversal uses. */
@@ -187,12 +186,12 @@ function GraphView() {
   }, [selected, liveEdges, memories, entities]);
 
   async function run(work: () => Promise<void>) {
-    if (!key) return;
+    if (!token) return;
     setBusy(true);
     setError(null);
     try {
       await work();
-      await load(key);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Operation failed.");
     } finally {
@@ -202,7 +201,7 @@ function GraphView() {
 
   const addNode = () =>
     run(async () => {
-      await bfFetch(key!, "/entities", {
+      await request("/entities", {
         method: "POST",
         body: JSON.stringify({
           name: newName.trim(),
@@ -218,7 +217,7 @@ function GraphView() {
   const deleteNode = (id: string) => {
     if (!confirm("Delete this node and every link touching it?")) return;
     void run(async () => {
-      await bfFetch(key!, `/entities/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await request(`/entities/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (selectedId === id) setSelectedId(null);
     });
   };
@@ -226,13 +225,13 @@ function GraphView() {
   const removeEdge = (edgeId: string) => {
     if (!confirm("Remove this link?")) return;
     void run(() =>
-      bfFetch(key!, `/edges/${encodeURIComponent(edgeId)}`, { method: "DELETE" }),
+      request(`/edges/${encodeURIComponent(edgeId)}`, { method: "DELETE" }),
     );
   };
 
   const addLink = () =>
     run(async () => {
-      await bfFetch(key!, "/edges", {
+      await request("/edges", {
         method: "POST",
         body: JSON.stringify({
           sourceId: selectedId!,
@@ -249,17 +248,18 @@ function GraphView() {
     <AppShell
       title="Graph"
       intro="The tools, languages and concepts your facts mention — add nodes, link them, remove what does not belong."
+      wide
     >
-      {error ?? keyError ? (
+      {error ?? sessionError ? (
         <p
           role="alert"
-          className="hairline mb-6 rounded-xl border border-red-300 bg-red-50 p-4 text-[13px] text-red-800"
+          className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200"
         >
-          {error ?? keyError}
+          {error ?? sessionError}
         </p>
       ) : null}
 
-      {entities === null && !error && !keyError ? (
+      {entities === null && !error && !sessionError ? (
         <output
           aria-live="polite"
           className="block font-mono text-[11px] uppercase tracking-[0.1em] text-forest/45"
@@ -338,7 +338,7 @@ function GraphView() {
                 <button
                   type="submit"
                   disabled={busy || !newName.trim()}
-                  className="h-11 shrink-0 rounded-full bg-forest px-5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-paper disabled:opacity-60"
+                  className="h-11 shrink-0 rounded-lg bg-emerald px-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-forest-deep disabled:opacity-60"
                 >
                   {busy ? "…" : "Create"}
                 </button>
@@ -369,7 +369,7 @@ function GraphView() {
                               onClick={() => setSelectedId(active ? null : ent.$id)}
                               aria-pressed={active}
                               title={ent.summary ?? ent.name}
-                              className={`rounded-full px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.06em] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50 ${
+                              className={`rounded-md px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.06em] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50 ${
                                 active
                                   ? "bg-forest text-paper scale-[1.04]"
                                   : `${accent(ent.type)} hover:scale-[1.03]`
@@ -390,7 +390,7 @@ function GraphView() {
                                 disabled={busy}
                                 title={`Delete ${ent.name}`}
                                 aria-label={`Delete node ${ent.name}`}
-                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-forest text-paper transition-colors hover:bg-red-600"
+                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-paper-dim text-forest transition-colors hover:bg-red-500 hover:text-white"
                               >
                                 <X size={10} strokeWidth={2.5} aria-hidden />
                               </button>
@@ -410,7 +410,7 @@ function GraphView() {
                 <aside className="hairline sticky top-20 rounded-xl border bg-paper p-5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] ${accent(selected.type)}`}
+                      className={`rounded-md px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] ${accent(selected.type)}`}
                     >
                       {selected.type}
                     </span>
@@ -422,7 +422,7 @@ function GraphView() {
                         type="button"
                         onClick={() => deleteNode(selected.$id)}
                         disabled={busy}
-                        className={`${PILL} text-forest/50 hover:border-red-400 hover:text-red-700`}
+                        className={`${PILL} text-forest/50 hover:border-red-400/50 hover:text-red-300`}
                       >
                         Delete node
                       </button>
@@ -473,7 +473,7 @@ function GraphView() {
                         type="button"
                         onClick={() => void addLink()}
                         disabled={busy || !linkTarget}
-                        className="h-11 shrink-0 rounded-full bg-forest px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-paper disabled:opacity-60"
+                        className="h-11 shrink-0 rounded-lg bg-emerald px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-forest-deep disabled:opacity-60"
                       >
                         Link
                       </button>
@@ -509,7 +509,7 @@ function GraphView() {
                               disabled={busy}
                               title="Remove this link"
                               aria-label="Remove link to this fact"
-                              className="mt-0.5 shrink-0 rounded-full p-1 text-forest/35 transition-colors hover:bg-red-50 hover:text-red-600"
+                              className="mt-0.5 shrink-0 rounded-full p-1 text-forest/35 transition-colors hover:bg-red-500/10 hover:text-red-300"
                             >
                               <X size={12} strokeWidth={2.5} aria-hidden />
                             </button>
@@ -528,7 +528,7 @@ function GraphView() {
                         {connections.linked.map(({ edgeId, node }) => (
                           <li
                             key={edgeId}
-                            className={`group/link inline-flex items-center gap-1 rounded-full py-1 pl-2.5 pr-1.5 font-mono text-[9px] uppercase tracking-[0.08em] ${accent(node.type)}`}
+                            className={`group/link inline-flex items-center gap-1 rounded-md py-1 pl-2.5 pr-1.5 font-mono text-[9px] uppercase tracking-[0.08em] ${accent(node.type)}`}
                           >
                             <button
                               type="button"
@@ -543,7 +543,7 @@ function GraphView() {
                               disabled={busy}
                               title="Remove this link"
                               aria-label={`Remove link to ${node.name}`}
-                              className="rounded-full p-0.5 text-forest/40 transition-colors hover:bg-red-100 hover:text-red-700"
+                              className="rounded-full p-0.5 text-forest/40 transition-colors hover:bg-red-500/10 hover:text-red-300"
                             >
                               <X size={10} strokeWidth={2.5} aria-hidden />
                             </button>

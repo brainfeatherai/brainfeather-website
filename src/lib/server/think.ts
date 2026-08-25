@@ -22,11 +22,12 @@ import 'server-only';
    ──────────────────────────────────────────────────────────────── */
 
 import { extractEntities } from './entities';
+import { reportServerError } from './report-error';
 import {
   createMemory,
-  createEdge,
+  getMemory,
   listActive,
-  listEntities,
+  syncMentionEdges,
   supersede,
   upsertEntity,
 } from './memory-store';
@@ -37,12 +38,47 @@ export type Candidate = {
   source?: string;
   title?: string;
   projectId?: string;
+  supersedesId?: string;
+  provenance?: 'user_stated';
 };
 
 export type Decision =
   | { action: 'reject'; reason: string }
   | { action: 'duplicate'; id: string }
   | { action: 'add'; id: string; invalidated: string[]; reason: string };
+
+export async function enrichMemory(
+  userId: string,
+  memoryId: string,
+  content: string,
+): Promise<void> {
+  const names = extractEntities(content);
+  const entities = await Promise.all(
+    names.map((entity) => upsertEntity(userId, entity.name, entity.type)),
+  );
+  await syncMentionEdges(
+    userId,
+    memoryId,
+    entities.map((entity) => entity.$id),
+    content,
+  );
+}
+
+async function enrichMemoryBestEffort(
+  userId: string,
+  memoryId: string,
+  content: string,
+): Promise<void> {
+  try {
+    await enrichMemory(userId, memoryId, content);
+  } catch (err) {
+    reportServerError(err, {
+      operation: 'memory.enrich',
+      userId,
+      resourceId: memoryId,
+    });
+  }
+}
 
 /* ── Junk heuristics ────────────────────────────────────────────── */
 
@@ -117,10 +153,61 @@ function labelOf(content: string): string | null {
 
 const DECISION = /\b(decided|chose|picked|going with|settled on|migrated to|switched to|moving to|instead of|after comparing|evaluated)\b/i;
 const PATTERN = /\b(always|never|convention|rule:|prefer|typically|usually|standard is|we do|we use|pattern|consistently)\b/i;
-const CORRECTION = /\b(actually|no[,.]|that'?s wrong|not quite|should be|meant to|I meant|correction|fixed|correcting)\b/i;
+const CORRECTION = /\b(actually|no[,.]|that'?s wrong|not quite|not\s+[A-Za-z0-9_.+-]+(?:[,.]|$)|should be|meant to|I meant|correction|fixed|correcting)\b/i;
 const PREFERENCE = /\b(prefer|like|love|hate|dislike|favorite|style|taste|personally|I want|I need|I like)\b/i;
 
 export type MemoryType = 'fact' | 'decision' | 'pattern' | 'correction' | 'preference';
+const MAX_SUPERSEDE_TARGETS = 25;
+
+function metadataOf(memory: { metadata?: string }): {
+  intendedSupersedes?: string[];
+} {
+  try {
+    const value = JSON.parse(memory.metadata ?? '{}') as Record<string, unknown>;
+    return {
+      intendedSupersedes: Array.isArray(value.intendedSupersedes)
+        ? value.intendedSupersedes.filter((id): id is string => typeof id === 'string')
+        : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function finishSupersession(
+  userId: string,
+  replacementId: string,
+  targetIds: string[],
+  projectId?: string,
+): Promise<void> {
+  const targets = (
+    await Promise.all(targetIds.map((id) => getMemory(userId, id, projectId)))
+  ).filter((memory): memory is NonNullable<typeof memory> => memory !== null);
+
+  if (targets.length !== targetIds.length) {
+    throw new Error('Supersession target is missing or belongs to another project.');
+  }
+
+  const active = targets.filter((memory) => memory.status === 'active');
+  const replacedElsewhere = targets.some(
+    (memory) => memory.status === 'invalid' && memory.supersededBy !== replacementId,
+  );
+  if (replacedElsewhere) {
+    throw new Error('Supersession target was already replaced by another memory.');
+  }
+  if (active.length) await supersede(active.map((memory) => memory.$id), replacementId);
+  await Promise.all(
+    targets.map((memory) =>
+      syncMentionEdges(userId, memory.$id, []).catch((err) => {
+        reportServerError(err, {
+          operation: 'memory.close_superseded_links',
+          userId,
+          resourceId: memory.$id,
+        });
+      }),
+    ),
+  );
+}
 
 /* Order matters: a correction that also states a decision is a
    correction, because it has to be able to supersede the decision. */
@@ -138,25 +225,59 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   const content = cand.content.replace(/\s+/g, ' ').trim();
   const type = detectType(content);
 
-  /* Compared against THIS project's facts (plus global ones), not every
+  /* Compared against THIS project's facts, not every
      fact the user owns. Without the scope, saving "we use Postgres" in a
      second project was rejected as a duplicate of the first project's
      fact — refusing a genuinely project-specific decision. Dedup and
      contradiction detection both read from here, so both were affected. */
   const existing = await listActive(userId, {
     projectId: cand.projectId,
+    strictScope: cand.projectId !== undefined,
     limit: 100,
   });
+
+  const scope = cand.projectId ?? null;
+  const sameScope = (doc: { projectId?: string | null }) =>
+    (doc.projectId ?? null) === scope;
 
   // 1 + 2. Duplicates, before the junk filter (see header note).
   const incoming = tokens(content);
   for (const doc of existing) {
-    if (norm(doc.content) === norm(content)) return { action: 'duplicate', id: doc.$id };
-  }
-  for (const doc of existing) {
-    if (jaccard(incoming, tokens(doc.content)) >= 0.55) {
+    if (norm(doc.content) === norm(content)) {
+      if (cand.supersedesId === doc.$id) {
+        return { action: 'reject', reason: 'a memory cannot supersede itself' };
+      }
+      const intended = new Set(metadataOf(doc).intendedSupersedes ?? []);
+      if (cand.supersedesId) intended.add(cand.supersedesId);
+      if (intended.size) {
+        await finishSupersession(userId, doc.$id, [...intended], cand.projectId);
+      }
+      await enrichMemoryBestEffort(userId, doc.$id, doc.content);
       return { action: 'duplicate', id: doc.$id };
     }
+  }
+  for (const doc of existing) {
+    if (doc.$id === cand.supersedesId) continue;
+    if (jaccard(incoming, tokens(doc.content)) >= 0.55) {
+      if (cand.supersedesId) {
+        await finishSupersession(userId, doc.$id, [cand.supersedesId], cand.projectId);
+      }
+      await enrichMemoryBestEffort(userId, doc.$id, doc.content);
+      return { action: 'duplicate', id: doc.$id };
+    }
+  }
+
+  /* Validate the explicit target after deduplication. If the first save
+     committed but its HTTP response was lost, a safe retry sees the new
+     fact as a duplicate even though the original target is now inactive. */
+  const explicitTarget = cand.supersedesId
+    ? await getMemory(userId, cand.supersedesId, cand.projectId)
+    : undefined;
+  if (cand.supersedesId && !explicitTarget) {
+    return { action: 'reject', reason: 'supersedesId is not an active memory in this project' };
+  }
+  if (explicitTarget && explicitTarget.status !== 'active') {
+    return { action: 'reject', reason: 'supersedesId is not an active memory in this project' };
   }
 
   // 3. Junk.
@@ -164,29 +285,13 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   if (junk) return { action: 'reject', reason: junk };
 
   // 4. What does this replace?
-  const doomed = new Set<string>();
+  const doomed = new Set<string>(explicitTarget ? [explicitTarget.$id] : []);
 
   /* Supersede only WITHIN the incoming fact's own scope.
-
-     `existing` deliberately includes global (unscoped) facts so they
-     participate in dedup and contradiction checks — a global convention
-     should stop a project from re-recording it. But retraction is a
-     different power: without this filter, saving a refinement inside
-     project A could retract a GLOBAL preference and replace it with an
-     A-scoped fact, making it disappear from every other project. Silent,
-     and indistinguishable from data loss.
-
-     The same guard protects the reverse case: a write with no scope sees
-     every project's facts, and must not retract one belonging to a
-     project it was not made in.
 
      `?? null` because Appwrite returns null for an unset optional
      attribute while an omitted argument is undefined; the two mean the
      same thing here and must compare equal. */
-  const scope = cand.projectId ?? null;
-  const sameScope = (doc: { projectId?: string | null }) =>
-    (doc.projectId ?? null) === scope;
-
   /* Refinement: the new text restates an old fact and adds to it.
      Containment, not similarity — a longer text that keeps 85% of the old
      one's tokens is a rewrite of it. */
@@ -219,29 +324,48 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
     }
   }
 
+  /* A correction such as "Vitest, not Jest" may have low token overlap
+     with the old sentence. Only the explicitly negated technology is a
+     safe target; matching every entity would also retract an existing
+     true "we use Vitest" fact. */
+  if (type === 'correction') {
+    const negatedEntities = new Set(
+      [...content.matchAll(/\bnot\s+([A-Za-z0-9_.+-]+)/gi)].flatMap((match) =>
+        extractEntities(match[1]).map((entity) => entity.name),
+      ),
+    );
+    for (const doc of existing) {
+      if (!sameScope(doc)) continue;
+      const oldEntities = extractEntities(doc.content);
+      if (oldEntities.some((entity) => negatedEntities.has(entity.name))) {
+        doomed.add(doc.$id);
+      }
+    }
+  }
+
+  if (doomed.size > MAX_SUPERSEDE_TARGETS) {
+    return {
+      action: 'reject',
+      reason: `correction matched more than ${MAX_SUPERSEDE_TARGETS} memories; use supersedesId for a precise correction`,
+    };
+  }
+
   // 5. Store.
   const created = await createMemory(userId, {
     ...cand,
     content,
-    metadata: JSON.stringify({ memoryType: type, confidence: 0.8 }),
+    metadata: JSON.stringify({
+      memoryType: type,
+      confidence: cand.provenance === 'user_stated' ? 1 : 0.8,
+      provenance: cand.provenance ?? 'unspecified',
+      intendedSupersedes: [...doomed],
+    }),
+    supersedeIds: [...doomed],
   });
 
-  /* Entities and edges are best-effort: a failure here loses a graph
-     link, and must not lose the fact that was already written. */
-  try {
-    const names = extractEntities(content);
-    for (const e of names) await upsertEntity(userId, e.name, e.type);
-
-    if (names.length) {
-      const all = await listEntities(userId);
-      for (const e of names) {
-        const match = all.find((x) => x.name.toLowerCase() === e.name.toLowerCase());
-        if (match) await createEdge(userId, created.$id, match.$id, 'mentioned_in', 0.7);
-      }
-    }
-  } catch {
-    // Fact is stored; graph enrichment is not worth failing the request.
-  }
+  /* Enrichment remains best-effort: a graph failure must not roll back a
+     fact that has already been accepted and stored. */
+  await enrichMemoryBestEffort(userId, created.$id, content);
 
   const reason = doomed.size
     ? type === 'correction'
@@ -251,7 +375,9 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
         : 'richer rewrite of an existing fact'
     : `new ${type}`;
 
-  if (doomed.size) await supersede([...doomed], created.$id);
+  if (doomed.size) {
+    await finishSupersession(userId, created.$id, [...doomed], cand.projectId);
+  }
 
   return { action: 'add', id: created.$id, invalidated: [...doomed], reason };
 }

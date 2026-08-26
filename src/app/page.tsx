@@ -3,12 +3,11 @@ import Image from "next/image";
 import FlowDiagram from "@/components/FlowDiagram";
 import ChatCompare from "@/components/ChatCompare";
 import SiteNav from "@/components/SiteNav";
-import PillarCards from "@/components/PillarCards";
+import MemoryJourney from "@/components/MemoryJourney";
 import SiteFooter from "@/components/SiteFooter";
 import WaitlistForm from "@/components/WaitlistForm";
 import Reveal from "@/components/Reveal";
 import StructuredData from "@/components/StructuredData";
-import PublicAccessLink from "@/components/PublicAccessLink";
 
 /* Own canonical + og:url, rather than inheriting from the root layout:
    a root-level canonical is inherited by EVERY child, which made the
@@ -112,56 +111,8 @@ export default function Home() {
         <div className="relative bg-paper px-6 pb-28 pt-14 sm:px-12">
           <CornerTicks />
 
-          <div className="mx-auto max-w-lg text-center">
-            <p className="text-[15px] leading-relaxed text-forest/85">
-              Every new session starts your assistant from zero. Brainfeather keeps the
-              context that outlives the chat window.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              {/* Public visitors go to the waitlist. Approved signed-in
-                  users see Go to Console through PublicAccessLink. */}
-              <PublicAccessLink
-                className="flex items-center gap-2.5 rounded-full bg-forest py-2 pl-2 pr-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03]"
-                consoleClassName="flex items-center rounded-full bg-forest px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03]"
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-paper/15 text-mint">
-                  <DotGlyph variant="ring" />
-                </span>
-                Get early access
-              </PublicAccessLink>
-              <a
-                href="#how"
-                className="hairline flex items-center gap-2.5 rounded-full border bg-paper-dim py-2 pl-2 pr-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-forest transition-colors hover:bg-mint/25"
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-forest/8 text-emerald">
-                  <DotGlyph variant="grid" />
-                </span>
-                See how it works
-              </a>
-            </div>
-          </div>
-
-          {/* ── RAM vs disk ── */}
-          <div className="rule-t mt-20 pt-16">
-            <Reveal className="grid gap-10 md:grid-cols-[210px_1fr]">
-              <div className="flex items-start gap-3 text-emerald">
-                <DotGlyph variant="grid" />
-                <span className="pt-1 font-mono text-[10px] font-semibold uppercase leading-[1.5] tracking-[0.1em] text-forest">
-                  RAM
-                  <br />
-                  vs disk
-                </span>
-              </div>
-              <p className="max-w-3xl text-[clamp(1.3rem,2.5vw,2rem)] font-light leading-[1.38] tracking-[-0.018em] text-forest">
-                A context window is RAM — fast, and wiped when the session closes.
-                Brainfeather is the disk beside it: what your project actually is, written
-                as you work and read back before the next answer.
-              </p>
-            </Reveal>
-          </div>
-
           {/* ── DIAGRAM ── */}
-          <div id="how" className="rule-t rule-mark mt-24 pt-20">
+          <div id="how" className="rule-t rule-mark mt-20 pt-20">
             {/* the rule breaks around the mark — see .rule-mark */}
             <span
               className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2"
@@ -209,8 +160,9 @@ export default function Home() {
               </h2>
               <p className="mx-auto mt-5 max-w-[38rem] text-[13.5px] leading-[1.75] text-forest/75">
                 Same model, same question, same day&apos;s work — the only difference is
-                whether it already knows your project. The Supabase stack below is just an
-                example; Brainfeather records whichever one you chose.
+                whether it already knows the relevant context. The coding example below is
+                one case; Brainfeather can also remember how you communicate, learn, plan,
+                and make decisions.
               </p>
             </Reveal>
 
@@ -220,30 +172,7 @@ export default function Home() {
 
           </div>
 
-          {/* ── pillars ──
-              This section used to omit its rule: the scoreboard card
-              that sat directly above ended in its own bottom border, so
-              a rule here would have drawn a second edge a few px below
-              it. That card is gone, the block above now ends in text,
-              and the omission has no reason left — so it matches the
-              other sections again. */}
-          <div className="rule-t mt-24 pt-20">
-            <Reveal className="mx-auto max-w-xl text-center">
-              <h2 className="text-[clamp(1.9rem,4.6vw,3.4rem)] font-light leading-[1.06] tracking-[-0.03em] text-forest">
-                Built to stay correct
-              </h2>
-              <p className="mx-auto mt-5 max-w-md text-[13.5px] leading-[1.75] text-forest/75">
-                Storing everything is easy. Storing only what still holds true is the hard
-                part.
-              </p>
-            </Reveal>
-
-            {/* Not wrapped: PillarCards staggers its four cards itself,
-                so one wrapper here would reveal them as a single slab. */}
-            <div className="mt-14">
-              <PillarCards />
-            </div>
-          </div>
+          <MemoryJourney />
 
           {/* ── closing ──
               h2, not h3: this is a top-level section heading, sibling to
@@ -261,11 +190,12 @@ export default function Home() {
           <div id="waitlist" className="rule-t mt-24 pt-16 text-center">
             <Reveal>
               <h2 className="text-[clamp(1.6rem,3.6vw,2.6rem)] font-light leading-[1.14] tracking-[-0.025em] text-forest">
-                Stop re-explaining your project.
+                Stop re-explaining yourself.
               </h2>
               <p className="mx-auto mt-4 max-w-sm text-[13.5px] leading-[1.7] text-forest/70">
-                Brainfeather is in early development and onboarding testers. Leave your
-                email and we&apos;ll send you an invite.
+                Brainfeather is in early development and onboarding testers. Leave your email
+                and we&apos;ll invite you to build an assistant that remembers both your work and
+                the way you work.
               </p>
 
               <WaitlistForm />

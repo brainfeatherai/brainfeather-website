@@ -305,6 +305,38 @@ export async function migrateOwnedDataEncryption(userId: string): Promise<{
   return { memories: migratedMemories, entities: migratedEntities };
 }
 
+export async function migrateAllDataEncryption(): Promise<{
+  owners: number;
+  memories: number;
+  entities: number;
+}> {
+  if (!dataEncryptionEnabled()) {
+    throw new Error('[brainfeather] Data encryption is not enabled.');
+  }
+
+  const [memories, entities] = await Promise.all([
+    listAllDocuments<Pick<MemoryDoc, 'userId'>>(COLLECTIONS.memories, [
+      Query.select(['userId']),
+    ]),
+    listAllDocuments<Pick<EntityDoc, 'userId'>>(COLLECTIONS.entities, [
+      Query.select(['userId']),
+    ]),
+  ]);
+  const owners = new Set([
+    ...memories.map((row) => row.userId),
+    ...entities.map((row) => row.userId),
+  ]);
+  const migrated = { owners: owners.size, memories: 0, entities: 0 };
+
+  for (const userId of owners) {
+    const result = await migrateOwnedDataEncryption(userId);
+    migrated.memories += result.memories;
+    migrated.entities += result.entities;
+  }
+
+  return migrated;
+}
+
 function edgeIdForMention(userId: string, memoryId: string, entityId: string): string {
   return createHash('sha256')
     .update(`${userId}\0${memoryId}\0${entityId}\0mentioned_in`)

@@ -73,7 +73,7 @@ function MemoryRow({
   return (
     <li className="hairline group rounded-xl border bg-paper p-4 transition-[border-color] duration-300 hover:border-emerald/35">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-md border border-emerald/15 bg-mint/25 px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-forest">
+        <span className="rounded-md border border-white/[0.08] bg-white/[0.035] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-forest/65">
           {memory.category}
         </span>
         <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/40">
@@ -303,7 +303,7 @@ function Dashboard() {
       {notice ? (
         <p
           aria-live="polite"
-          className="hairline mb-6 rounded-xl border border-emerald/40 bg-mint/20 p-4 text-[13px] text-forest"
+          className="hairline mb-6 rounded-xl border bg-white/[0.035] p-4 text-[13px] text-forest/70"
         >
           {notice}
         </p>

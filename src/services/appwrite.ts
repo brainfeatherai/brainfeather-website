@@ -1,9 +1,8 @@
 import { account, databases } from '@/lib/appwrite';
-import { ID, Permission, Query, OAuthProvider, Role } from 'appwrite';
+import { ID, Query } from 'appwrite';
 import type { ContextRule, Team, TeamMember, Decision, Pattern } from '@/types';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
-const USERS_COLLECTION = 'users';
 const CONTEXT_RULES_COLLECTION = 'context_rules';
 const TEAMS_COLLECTION = 'teams';
 const TEAM_MEMBERS_COLLECTION = 'team_members';
@@ -16,28 +15,17 @@ export const authService = {
     return await account.createEmailPasswordSession(email, password);
   },
 
-  async createEmailPassword(email: string, password: string, name: string) {
-    const user = await account.create(ID.unique(), email, password, name);
-
-    // Create user profile in database
-    await databases.createDocument(
-      DATABASE_ID,
-      USERS_COLLECTION,
-      user.$id,
-      {
-        email: user.email,
-        name: user.name,
-        plan: 'free',
-        memoriesCount: 0,
-        lastActiveAt: new Date().toISOString(),
-      },
-      /* Owner-scoped row: the doc id IS the auth userId, and the users
-         collection runs with document security (create-only at
-         collection level). */
-      [Permission.read(Role.user(user.$id)), Permission.update(Role.user(user.$id))],
-    );
-
-    return user;
+  async createEmailPassword(email: string, password: string, name: string, inviteId: string) {
+    const response = await fetch('/api/public/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name, inviteId }),
+    });
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) {
+      throw new Error(body?.error ?? 'Could not create your Brainfeather account.');
+    }
+    return { email, name };
   },
 
   async getCurrentUser() {
@@ -52,36 +40,9 @@ export const authService = {
     return await account.createJWT({ duration: 3600 });
   },
 
-  /* Full-page redirect to the provider, so nothing after this runs.
-
-     createOAuth2Token, NOT createOAuth2Session. The session flow has
-     Appwrite set a session cookie on ITS OWN domain
-     (sgp.cloud.appwrite.io) while the app runs somewhere else. The
-     browser sees a third-party cookie and drops it, so the OAuth round
-     trip finishes, redirects back, and the user is still signed out —
-     silently, with no error anywhere.
-
-     The token flow returns userId + secret on the success URL instead.
-     The app exchanges them for a session from its own origin, which
-     lets the SDK fall back to localStorage (X-Fallback-Cookies) when
-     the cookie is refused. Works regardless of cookie policy.
-
-     Object-argument form: the positional overload is deprecated here.
-
-     No `scopes` passed — Google's default grant already carries email
-     and profile, and anything beyond those two non-sensitive scopes
-     drags the OAuth app into Google's verification review. */
-  signInWithOAuth(provider: OAuthProvider, origin: string) {
-    return account.createOAuth2Token({
-      provider,
-      success: `${origin}/auth/callback`,
-      failure: `${origin}/login?error=oauth`,
-    });
-  },
-
-  /* Second half of the token flow: trade the one-time secret for a real
-     session. Single-use and short-lived, so this runs immediately on the
-     callback route. */
+  /* Kept only for OAuth callbacks already in flight. The invite-only UI
+     does not expose OAuth login, and the server access gate still rejects
+     sessions without an existing profile or approved waitlist email. */
   async completeOAuth(userId: string, secret: string) {
     return await account.createSession({ userId, secret });
   },
@@ -95,24 +56,16 @@ export const authService = {
 
      Caller treats a throw as non-fatal: a missing profile degrades the
      dashboard, but it should not block a valid session from signing in. */
-  async ensureProfile(user: { $id: string; email: string; name: string }) {
-    try {
-      return await databases.getDocument(DATABASE_ID, USERS_COLLECTION, user.$id);
-    } catch {
-      return await databases.createDocument(
-        DATABASE_ID,
-        USERS_COLLECTION,
-        user.$id,
-        {
-          email: user.email,
-          name: user.name,
-          plan: 'free',
-          memoriesCount: 0,
-          lastActiveAt: new Date().toISOString(),
-        },
-        [Permission.read(Role.user(user.$id)), Permission.update(Role.user(user.$id))],
-      );
+  async ensureProfile(jwt: string) {
+    const response = await fetch('/api/v1/account', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? 'Could not provision your Brainfeather account.');
     }
+    return response.json();
   },
 
   async logout() {
@@ -130,7 +83,7 @@ export const authService = {
 
 /* Memory access intentionally has no browser-SDK service. Memory fields are
    encrypted by the authenticated server API, so a client-side database path
-   would bypass the encryption boundary. */
+   would either expose ciphertext or bypass the encryption boundary. */
 
 // Context Rule services
 export const contextRuleService = {

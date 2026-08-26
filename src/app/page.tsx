@@ -8,6 +8,7 @@ import SiteFooter from "@/components/SiteFooter";
 import WaitlistForm from "@/components/WaitlistForm";
 import Reveal from "@/components/Reveal";
 import StructuredData from "@/components/StructuredData";
+import PublicAccessLink from "@/components/PublicAccessLink";
 
 /* Own canonical + og:url, rather than inheriting from the root layout:
    a root-level canonical is inherited by EVERY child, which made the
@@ -117,20 +118,17 @@ export default function Home() {
               context that outlives the chat window.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              {/* Waitlist, not /login. Access is invite-only while
-                  testing, so sending an uninvited visitor to a sign-up
-                  form would be sending most of them to a dead end.
-                  Testers reach /login from the nav. Stays an anchor
-                  because it scrolls within this page. */}
-              <a
-                href="#waitlist"
+              {/* Public visitors go to the waitlist. Approved signed-in
+                  users see Go to Console through PublicAccessLink. */}
+              <PublicAccessLink
                 className="flex items-center gap-2.5 rounded-full bg-forest py-2 pl-2 pr-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03]"
+                consoleClassName="flex items-center rounded-full bg-forest px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.03]"
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-full bg-paper/15 text-mint">
                   <DotGlyph variant="ring" />
                 </span>
                 Get early access
-              </a>
+              </PublicAccessLink>
               <a
                 href="#how"
                 className="hairline flex items-center gap-2.5 rounded-full border bg-paper-dim py-2 pl-2 pr-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-forest transition-colors hover:bg-mint/25"

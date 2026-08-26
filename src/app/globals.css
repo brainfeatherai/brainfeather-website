@@ -50,25 +50,23 @@ body {
    warm paper brand. Product pages reuse the semantic palette tokens as
    a dense, high-contrast operations workspace. */
 .workspace-theme {
-  --forest: #eef3f1;
-  --forest-deep: #070908;
+  --forest: #f1f1f1;
+  --forest-deep: #080808;
   --emerald: #62d5a5;
-  --mint: #237555;
-  --paper: #111413;
-  --paper-dim: #181c1a;
-  --background: #080a09;
-  --foreground: #eef3f1;
+  --mint: #3a3a3a;
+  --paper: #121212;
+  --paper-dim: #1a1a1a;
+  --background: #090909;
+  --foreground: #f1f1f1;
 
   min-height: 100dvh;
   color-scheme: dark;
-  background:
-    radial-gradient(circle at 76% 3%, rgba(55, 128, 95, 0.11), transparent 30rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
 }
 
 .workspace-theme .hairline {
-  border-color: rgba(238, 243, 241, 0.09);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .workspace-theme input,
@@ -78,7 +76,7 @@ body {
 }
 
 .workspace-grid {
-  background-image: radial-gradient(rgba(238, 243, 241, 0.04) 0.75px, transparent 0.75px);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.035) 0.75px, transparent 0.75px);
   background-size: 26px 26px;
 }
 

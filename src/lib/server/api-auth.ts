@@ -8,6 +8,7 @@ import {
   storedApiKey,
 } from '@/lib/api-key';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
+import { hasProfile, isApprovedEmail } from './access-control';
 
 export type AuthResult =
   | {
@@ -15,6 +16,8 @@ export type AuthResult =
       userId: string;
       credential: 'apiKey' | 'jwt';
       keyId?: string;
+      email?: string;
+      name?: string;
     }
   | { ok: false; status: 401 | 403; error: string };
 
@@ -103,7 +106,21 @@ async function authenticateJwt(token: string): Promise<AuthResult> {
       new Client().setEndpoint(endpoint).setProject(project).setJWT(token),
     );
     const user = await account.get();
-    return { ok: true, userId: user.$id, credential: 'jwt' };
+    const approved = (await hasProfile(user.$id)) || (await isApprovedEmail(user.email));
+    if (!approved) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Your Brainfeather access request has not been approved yet.',
+      };
+    }
+    return {
+      ok: true,
+      userId: user.$id,
+      credential: 'jwt',
+      email: user.email,
+      name: user.name,
+    };
   } catch {
     return { ok: false, status: 401, error: 'Invalid or expired dashboard session.' };
   }

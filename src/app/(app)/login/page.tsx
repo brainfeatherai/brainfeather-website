@@ -18,17 +18,14 @@ import type { Metadata } from "next";
 import LoginView from "@/components/LoginView";
 
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: "Console access",
 };
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  searchParams: Promise<{ invite?: string | string[] }>;
 }) {
-  // A promise in this Next version — see docs/01-app/.../page.md.
-  const { error } = await searchParams;
-
-  // Repeated params arrive as an array, which is not the flag we set.
-  return <LoginView oauthFailed={error === "oauth"} />;
+  const { invite } = await searchParams;
+  return <LoginView inviteId={typeof invite === "string" ? invite : null} />;
 }

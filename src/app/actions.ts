@@ -108,6 +108,7 @@ export async function joinWaitlist(
       email,
       source: String(formData.get("source") ?? "website").slice(0, 64),
       submittedAt: new Date().toISOString(),
+      approved: false,
     });
 
     return { status: "ok", message: "You're on the list. We'll be in touch." };

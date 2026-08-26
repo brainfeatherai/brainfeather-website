@@ -39,7 +39,7 @@ function Metric({
           <p className="font-mono text-[9px] uppercase tracking-[0.13em] text-forest/35">{label}</p>
           <p className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-forest">{value}</p>
         </div>
-        <span className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-emerald/70">
+        <span className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-forest/50">
           <Icon size={16} strokeWidth={1.7} aria-hidden />
         </span>
       </div>
@@ -138,7 +138,7 @@ function OverviewView() {
                 </div>
               ) : (
                 <div className="mt-5 rounded-lg border border-dashed border-white/[0.10] bg-paper-dim p-6 text-[12px] leading-relaxed text-forest/45">
-                  Request telemetry is not configured yet. Memory and graph totals above remain live.
+                  Request telemetry is ready. API-key calls will appear here as clients use the deployed API.
                 </div>
               )}
             </section>

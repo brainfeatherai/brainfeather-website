@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -12,7 +12,6 @@ import {
   CircleDot,
   ExternalLink,
   KeyRound,
-  LogOut,
   Network,
   Search,
   Settings as SettingsIcon,
@@ -121,9 +120,8 @@ export default function AppShell({
   wide?: boolean;
   immersive?: boolean;
 }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
   const [navQuery, setNavQuery] = useState("");
   const navSearchRef = useRef<HTMLInputElement>(null);
 
@@ -142,11 +140,6 @@ export default function AppShell({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-
-  async function signOut() {
-    await logout();
-    router.replace("/login");
-  }
 
   const initial = (user?.name || user?.email || "B").trim().charAt(0).toUpperCase();
   const allNav = [...KNOWLEDGE_NAV, ...DEVELOPER_NAV, ...SYSTEM_NAV];
@@ -195,15 +188,6 @@ export default function AppShell({
               </p>
               <p className="truncate text-[10px] text-forest/30">{user?.email ?? "Signed in"}</p>
             </div>
-            <button
-              type="button"
-              onClick={signOut}
-              title="Sign out"
-              aria-label="Sign out"
-              className="rounded-md p-2 text-forest/30 transition-colors hover:bg-white/[0.05] hover:text-forest"
-            >
-              <LogOut size={14} strokeWidth={1.7} aria-hidden />
-            </button>
           </div>
         </div>
       </aside>
@@ -247,7 +231,7 @@ export default function AppShell({
           </div>
           <div className="ml-auto flex items-center gap-5">
             <span className="inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald shadow-[0_0_10px_rgba(98,213,165,0.8)]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald" />
               Synced
             </span>
             <Link

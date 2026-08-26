@@ -1,15 +1,13 @@
 import 'server-only';
 
-import { ID, Query } from 'node-appwrite';
+import { ID, Query, type Models } from 'node-appwrite';
 import { after } from 'next/server';
 import { authenticate, fail, type AuthResult } from './api-auth';
-import { adminDb, COLLECTIONS, DATABASE_ID } from './appwrite-admin';
+import { adminDb, adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin';
 
 type AuthSuccess = Extract<AuthResult, { ok: true }>;
 
-export type RequestMetric = {
-  $id: string;
-  $createdAt: string;
+export type RequestMetric = Models.Row & {
   userId: string;
   keyId: string;
   operation: string;
@@ -53,10 +51,10 @@ async function recordApiRequest(input: {
   status: number;
   durationMs: number;
 }): Promise<void> {
-  await adminDb.createDocument({
+  await adminTables.createRow({
     databaseId: DATABASE_ID,
-    collectionId: COLLECTIONS.apiRequests,
-    documentId: ID.unique(),
+    tableId: COLLECTIONS.apiRequests,
+    rowId: ID.unique(),
     data: {
       ...input,
       durationMs: Math.max(0, Math.round(input.durationMs)),
@@ -127,9 +125,9 @@ export async function readRequestAnalytics(
   let rows: RequestMetric[];
 
   try {
-    const result = await adminDb.listDocuments({
+    const result = await adminTables.listRows<RequestMetric>({
       databaseId: DATABASE_ID,
-      collectionId: COLLECTIONS.apiRequests,
+      tableId: COLLECTIONS.apiRequests,
       queries: [
         Query.equal('userId', userId),
         Query.greaterThanEqual('occurredAt', since),
@@ -138,7 +136,7 @@ export async function readRequestAnalytics(
       ],
       total: false,
     });
-    rows = result.documents as unknown as RequestMetric[];
+    rows = result.rows;
   } catch (error) {
     if (!isMissingTelemetryTable(error)) throw error;
     return {

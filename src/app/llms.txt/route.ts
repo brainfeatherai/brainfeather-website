@@ -31,7 +31,7 @@ wiped when the session closes. Brainfeather is the disk beside it.
 ## Status
 
 In early development, and free while it is. Access is invite-only: request one
-from the waitlist on the home page. Invited testers sign in, generate an API key,
+from the waitlist on the home page. Approved testers create an account, generate an API key,
 and connect it to an MCP-compatible editor. There is no installable package on
 npm at the time of writing.
 
@@ -51,7 +51,7 @@ npm at the time of writing.
 ## Pages
 
 - [Home](${SITE_URL}/): what it is and how it works.
-- [Sign in](${SITE_URL}/login): create an account or sign in.
+- [Request access](${SITE_URL}/#waitlist): join the invite-only waitlist.
 - [Contact](${SITE_URL}/contact): support, security reports, press.
 - [Privacy Policy](${SITE_URL}/privacy): what is collected and stored, and for how long.
 - [Terms of Service](${SITE_URL}/terms): the terms of use.

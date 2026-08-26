@@ -18,7 +18,7 @@ import 'server-only';
    have different constructors — only the server one accepts .setKey().
    ──────────────────────────────────────────────────────────────── */
 
-import { Client, Databases } from 'node-appwrite';
+import { Client, Databases, TablesDB, Users } from 'node-appwrite';
 
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
 const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
@@ -45,9 +45,16 @@ export const COLLECTIONS = {
   edges: 'edges',
   apiKeys: 'api_keys',
   apiRequests: 'api_requests',
+  contextRules: 'context_rules',
+  teams: 'teams',
+  teamMembers: 'team_members',
+  decisions: 'decisions',
+  patterns: 'patterns',
   waitlist: 'waitlist',
 } as const;
 
-export const adminDb = new Databases(
-  new Client().setEndpoint(endpoint).setProject(project).setKey(apiKey),
-);
+const adminClient = new Client().setEndpoint(endpoint).setProject(project).setKey(apiKey);
+
+export const adminDb = new Databases(adminClient);
+export const adminTables = new TablesDB(adminClient);
+export const adminUsers = new Users(adminClient);

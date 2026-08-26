@@ -3,6 +3,8 @@
 import { useActionState } from "react";
 import { joinWaitlist, type WaitlistState } from "@/app/actions";
 import { mailto } from "@/lib/site";
+import Link from "next/link";
+import { useConsoleAccess } from "./PublicAccessLink";
 
 /* ────────────────────────────────────────────────────────────────
    Email capture for the closing section.
@@ -34,6 +36,20 @@ function DotRing() {
 
 export default function WaitlistForm() {
   const [state, action, pending] = useActionState(joinWaitlist, INITIAL);
+  const hasAccess = useConsoleAccess();
+
+  if (hasAccess) {
+    return (
+      <div className="mx-auto mt-8 max-w-[30rem] text-center">
+        <Link
+          href="/overview"
+          className="inline-flex h-11 items-center rounded-lg bg-forest px-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.02]"
+        >
+          Go to Console →
+        </Link>
+      </div>
+    );
+  }
 
   if (state.status === "ok") {
     return (

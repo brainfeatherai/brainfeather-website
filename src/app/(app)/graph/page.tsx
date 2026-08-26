@@ -48,7 +48,7 @@ const PILL =
   "hairline rounded-md border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50";
 
 function accent(type: string): string {
-  return TYPE_ACCENT[type] ?? "bg-mint/25 text-forest";
+  return TYPE_ACCENT[type] ?? "border border-white/[0.08] bg-white/[0.035] text-forest/70";
 }
 
 function GraphView() {

@@ -186,7 +186,7 @@ function GraphLegend({
                 return (
                   <span key={type} className="flex items-center gap-2 text-[11px] text-forest/55">
                     <span
-                      className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]"
+                      className="h-2 w-2 rounded-full"
                       style={{ background: color.fill, color: color.fill }}
                     />
                     {color.label}
@@ -508,13 +508,10 @@ function GraphCanvas({
 
         /* Colored core with a restrained halo. */
         ctx.globalAlpha = muted ? 0.18 : 1;
-        ctx.shadowColor = c.fill;
-        ctx.shadowBlur = muted ? 0 : isSelected ? 28 : 16;
         ctx.fillStyle = c.fill;
         ctx.beginPath();
         ctx.arc(cx + n.x, cy + n.y, r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
 
         /* Ring */
         ctx.strokeStyle = c.stroke;
@@ -673,7 +670,7 @@ function DetailPanel({
     <div className="absolute bottom-4 left-4 right-4 z-20 max-h-[55%] overflow-auto rounded-2xl border border-white/10 bg-[#121514]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:left-auto sm:w-[360px] lg:bottom-auto lg:right-5 lg:top-5 lg:max-h-[76%]">
       <div className="flex items-center gap-2">
         <span
-          className="inline-block h-2.5 w-2.5 rounded-full shadow-[0_0_12px_currentColor]"
+          className="inline-block h-2.5 w-2.5 rounded-full"
           style={{ background: (TYPE_COLORS[node.type] ?? DEFAULT_COLOR).fill }}
         />
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">
@@ -947,7 +944,7 @@ function NodesView() {
       {notice ? (
         <p
           aria-live="polite"
-          className="mb-6 rounded-xl border border-emerald/30 bg-mint/15 p-4 text-[13px] text-forest"
+          className="mb-6 rounded-xl border border-white/[0.10] bg-white/[0.035] p-4 text-[13px] text-forest/70"
         >
           {notice}
         </p>
@@ -974,7 +971,7 @@ function NodesView() {
               type="button"
               onClick={rebuildGraph}
               disabled={rebuilding}
-              className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg border border-emerald/25 bg-emerald/10 px-4 font-mono text-[9px] uppercase tracking-[0.1em] text-emerald transition-colors hover:bg-emerald/15 disabled:opacity-50"
+              className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/60 transition-colors hover:border-white/[0.20] hover:text-forest disabled:opacity-50"
             >
               <RefreshCw
                 size={13}

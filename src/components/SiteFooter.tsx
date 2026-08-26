@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { SOCIALS } from "@/lib/site";
+import PublicAccessLink from "./PublicAccessLink";
 
 /* ────────────────────────────────────────────────────────────────
    Site footer, shared by the landing page and the legal pages.
@@ -54,7 +55,6 @@ const COLUMNS = [
     links: [
       { label: "How it works", href: "/#how" },
       { label: "Integrations", href: "/#how" },
-      { label: "Sign in", href: "/login" },
     ],
   },
   {
@@ -170,12 +170,9 @@ export default function SiteFooter() {
               shouldn't compete with the one conversion point. */}
           <SocialLinks />
 
-          {/* The public conversion point, so /#waitlist rather than
-              /login — access is invite-only and most visitors cannot
-              complete a sign-up. The "Sign in" link in the columns above
-              is the path for invited testers. */}
-          <Link
-            href="/#waitlist"
+          {/* Public visitors request access; approved signed-in visitors
+              see the console link through PublicAccessLink. */}
+          <PublicAccessLink
             className="group flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-mint/80 transition-colors hover:text-mint"
           >
             Request access
@@ -185,7 +182,7 @@ export default function SiteFooter() {
             >
               →
             </span>
-          </Link>
+          </PublicAccessLink>
         </div>
       </div>
     </footer>

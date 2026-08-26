@@ -51,7 +51,7 @@ export default function OAuthCallback({
       .completeOAuth(userId, secret)
       .then(() => {
         // Full document load — see note 1 above.
-        window.location.replace("/dashboard");
+        window.location.replace("/overview");
       })
       .catch(() => {
         window.location.replace("/login?error=oauth");

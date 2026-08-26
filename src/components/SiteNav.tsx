@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import PublicAccessLink from "./PublicAccessLink";
 
 /* ────────────────────────────────────────────────────────────────
    Persistent top nav.
@@ -93,18 +94,15 @@ export default function SiteNav() {
             ))}
           </ul>
 
-          {/* Straight to /login, not the old /#waitlist anchor. Signup
-              exists, so scrolling someone to an email form was a longer
-              path to a worse outcome. */}
-          <Link
-            href="/login"
+          <PublicAccessLink
             className="group flex shrink-0 items-center gap-2.5 rounded-full bg-paper py-1.5 pl-1.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.09em] text-forest transition-transform hover:scale-[1.03]"
+            consoleClassName="flex shrink-0 items-center rounded-full bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-forest transition-transform hover:scale-[1.03]"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-forest text-mint">
               <DotRing className="h-[15px] w-[15px] transition-transform duration-500 group-hover:rotate-45" />
             </span>
-            Sign in
-          </Link>
+            Request access
+          </PublicAccessLink>
         </div>
       </nav>
     </header>

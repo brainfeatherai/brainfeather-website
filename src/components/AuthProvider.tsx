@@ -41,8 +41,9 @@ type AuthState = {
   /** True until the initial session probe settles. Distinct from "no user". */
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
+  signup: (email: string, password: string, name: string, inviteId: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -93,20 +94,28 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     // anonymous visitor and returns null, so no try/catch needed here.
     authService.getCurrentUser().then(async (u) => {
       if (!active || generation !== authGeneration.current) return;
-      setUser(u);
-      if (u) await refreshJwt();
+      if (u) {
+        const accessJwt = await refreshJwt();
+        if (!accessJwt) {
+          await authService.logout().catch(() => {});
+          if (active) setUser(null);
+        } else {
+          try {
+            await authService.ensureProfile(accessJwt);
+            if (active) setUser(u);
+          } catch {
+            await authService.logout().catch(() => {});
+            if (active) {
+              setUser(null);
+              setJwt(null);
+              setJwtError('Your Brainfeather access request has not been approved yet.');
+            }
+          }
+        }
+      } else {
+        setUser(null);
+      }
       if (active && generation === authGeneration.current) setLoading(false);
-
-      /* An OAuth signup never runs createEmailPassword, so nothing has
-         created its `users` row. This is the one place that observes a
-         settled session no matter how it was opened, so the backfill
-         belongs here.
-
-         Swallowed deliberately: a missing profile row degrades the
-         dashboard, but it must not stop a valid session from signing in.
-         Relevant today — the collections grant no permissions yet, so
-         this throws 403 for every account until that is fixed. */
-      if (u) void authService.ensureProfile(u).catch(() => {});
     });
     return () => {
       active = false;
@@ -133,22 +142,44 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const generation = ++authGeneration.current;
     await authService.createEmailSession(email, password);
-    const current = await authService.getCurrentUser();
-    if (generation !== authGeneration.current) return;
-    setUser(current);
-    if (current) await refreshJwt();
+    try {
+      const current = await authService.getCurrentUser();
+      if (generation !== authGeneration.current) return;
+      if (current) {
+        const accessJwt = await refreshJwt();
+        if (!accessJwt) throw new Error('Could not establish dashboard access.');
+        await authService.ensureProfile(accessJwt);
+        setUser(current);
+      }
+    } catch (error) {
+      await authService.logout().catch(() => {});
+      setUser(null);
+      setJwt(null);
+      throw error;
+    }
   }, [refreshJwt]);
 
   const signup = useCallback(
-    async (email: string, password: string, name: string) => {
+    async (email: string, password: string, name: string, inviteId: string) => {
       const generation = ++authGeneration.current;
-      await authService.createEmailPassword(email, password, name);
+      await authService.createEmailPassword(email, password, name, inviteId);
       // create() does not open a session; the caller must sign in.
       await authService.createEmailSession(email, password);
-      const current = await authService.getCurrentUser();
-      if (generation !== authGeneration.current) return;
-      setUser(current);
-      if (current) await refreshJwt();
+      try {
+        const current = await authService.getCurrentUser();
+        if (generation !== authGeneration.current) return;
+        if (current) {
+          const accessJwt = await refreshJwt();
+          if (!accessJwt) throw new Error('Could not establish dashboard access.');
+          await authService.ensureProfile(accessJwt);
+          setUser(current);
+        }
+      } catch (error) {
+        await authService.logout().catch(() => {});
+        setUser(null);
+        setJwt(null);
+        throw error;
+      }
     },
     [refreshJwt],
   );
@@ -161,9 +192,26 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     await authService.logout();
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    const credential = jwt ?? (await refreshJwt());
+    if (!credential) throw new Error('Dashboard authentication is unavailable.');
+    const response = await fetch('/api/v1/account', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${credential}` },
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? 'Could not delete your account.');
+    }
+    authGeneration.current++;
+    setUser(null);
+    setJwt(null);
+    setJwtError(null);
+  }, [jwt, refreshJwt]);
+
   return (
     <AuthContext.Provider
-      value={{ user, jwt, jwtError, refreshJwt, loading, login, signup, logout }}
+      value={{ user, jwt, jwtError, refreshJwt, loading, login, signup, logout, deleteAccount }}
     >
       {children}
     </AuthContext.Provider>

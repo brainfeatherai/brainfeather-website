@@ -71,6 +71,38 @@ SHA-256 digests. Roll out without breaking active editors:
 4. Confirm no plaintext rows remain before removing the compatibility lookup in a later
    release.
 
+## User data encryption rollout
+
+Memory text, titles, private metadata, project identifiers, entity names, and entity
+summaries support application-layer AES-256-GCM encryption. Appwrite stores ciphertext
+and tenant-bound blind indexes; authenticated server routes decrypt values for the MCP
+and dashboard. This protects database exports and console access, but it is not
+zero-knowledge encryption: a production operator with both database access and the
+Vercel encryption keys can decrypt data.
+
+Use three rollout states:
+
+1. Increase Appwrite string capacities before deploying encrypted writes:
+   `memories.content=11000`, `memories.title=1024`, `memories.metadata=3000`, and
+   `entities.summary=3000`.
+2. Generate two independent 32-byte secrets. Set
+   `BRAINFEATHER_DATA_ENCRYPTION_KEYS=v1:<base64url-key>`,
+   `BRAINFEATHER_DATA_INDEX_KEY=<base64url-key>`, and
+   `BRAINFEATHER_DATA_ENCRYPTION=compatibility`. Compatibility mode reads plaintext and
+   ciphertext, queries plaintext and blind indexes, and keeps new rows plaintext.
+3. Verify dashboard and MCP reads, then switch to
+   `BRAINFEATHER_DATA_ENCRYPTION=encrypted`. New writes are encrypted.
+4. While signed into the dashboard, `POST /api/v1/account/encryption` with the dashboard
+   JWT once per account. The idempotent migration encrypts active and superseded memories
+   plus derived entities and returns counts only.
+5. Verify every private field is an envelope beginning with `bfe1.` and every indexed
+   private identifier is a 64-character blind index. Keep compatibility mode available
+   for rollback; plaintext mode intentionally refuses encrypted rows.
+
+For key rotation, prepend the new key (`v2:<new>,v1:<old>`) and run the same account
+migration. Remove `v1` only after no `bfe1.v1.` values remain. Rotating the blind-index
+key requires a separate coordinated index migration and must not be done in place.
+
 ## Known gaps
 
 - **The legal pages are drafts.** Both carry a visible banner and highlighted

@@ -5,8 +5,9 @@ import {
   apiKeyHint,
   apiKeySlotId,
   createApiKey,
-  isHashedApiKey,
   isBrainfeatherApiKey,
+  isHashedApiKey,
+  legacyStoredApiKey,
   storedApiKey,
 } from './api-key.ts';
 
@@ -35,6 +36,9 @@ test('renders a safe hint for legacy rows during migration', () => {
     apiKeyHint(storedApiKey('bf_test_1234567890abcdef')),
     'bf_test_...cdef',
   );
+  const oldDigest = legacyStoredApiKey('bf_live_1234567890abcdef');
+  assert.equal(isHashedApiKey(oldDigest), true);
+  assert.equal(apiKeyHint(oldDigest), 'bf_...cdef');
 });
 
 test('assigns stable, distinct per-user key slots', () => {

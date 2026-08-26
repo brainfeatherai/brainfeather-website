@@ -4,6 +4,7 @@ import { Account, Client, Query } from 'node-appwrite';
 import {
   apiKeyHashWritesEnabled,
   isBrainfeatherApiKey,
+  legacyStoredApiKey,
   storedApiKey,
 } from '@/lib/api-key';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
@@ -24,12 +25,25 @@ const authCache = new WeakMap<Request, Promise<AuthResult>>();
 
 async function authenticateApiKey(token: string): Promise<AuthResult> {
   const hashed = storedApiKey(token);
+  const legacyHashed = legacyStoredApiKey(token);
   let found;
   try {
     found = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.apiKeys, [
-      Query.equal('key', hashed),
+      Query.equal('key', [hashed, legacyHashed]),
       Query.limit(1),
     ]);
+
+    const existingHash = found.documents[0];
+    if (
+      existingHash &&
+      existingHash.key === legacyHashed &&
+      apiKeyHashWritesEnabled()
+    ) {
+      await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.apiKeys, existingHash.$id, {
+        key: hashed,
+        lastUsedAt: new Date().toISOString(),
+      });
+    }
 
     /* Compatibility migration: prove the caller knows the old plaintext
        token, then replace it with its digest before accepting the call. */
@@ -51,7 +65,7 @@ async function authenticateApiKey(token: string): Promise<AuthResult> {
         /* Settings may have migrated the row between our digest and
            plaintext reads. Recheck the final state before rejecting. */
         found = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.apiKeys, [
-          Query.equal('key', hashed),
+          Query.equal('key', [hashed, legacyHashed]),
           Query.limit(1),
         ]);
       }

@@ -30,8 +30,17 @@ export function storedApiKey(token: string): string {
   return `${HASH_PREFIX}${apiKeyDigest(token)}:${environment}:${token.slice(-4)}`;
 }
 
+/** Digest shape used by the first hashing rollout. Keep readable until all
+ * rows have been normalized to the environment-aware format. */
+export function legacyStoredApiKey(token: string): string {
+  return `${HASH_PREFIX}${apiKeyDigest(token)}:${token.slice(-4)}`;
+}
+
 export function isHashedApiKey(value: string): boolean {
-  return /^sha256:[a-f0-9]{64}:(?:live|test|legacy):[A-Za-z0-9]{4}$/.test(value);
+  return (
+    /^sha256:[a-f0-9]{64}:(?:live|test|legacy):[A-Za-z0-9]{4}$/.test(value) ||
+    /^sha256:[a-f0-9]{64}:[A-Za-z0-9]{4}$/.test(value)
+  );
 }
 
 export function apiKeyHint(value: string): string {
@@ -39,7 +48,9 @@ export function apiKeyHint(value: string): string {
     const prefix = value.startsWith('bf_test_') ? 'bf_test_' : TOKEN_PREFIX;
     return `${prefix}...${value.slice(-4)}`;
   }
-  const [, , environment, suffix] = value.split(':');
+  const parts = value.split(':');
+  if (parts.length === 3) return `bf_...${parts[2]}`;
+  const [, , environment, suffix] = parts;
   return environment === 'legacy'
     ? `bf_...${suffix}`
     : `bf_${environment}_...${suffix}`;

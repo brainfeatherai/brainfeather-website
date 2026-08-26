@@ -305,6 +305,82 @@ export async function migrateOwnedDataEncryption(userId: string): Promise<{
   return { memories: migratedMemories, entities: migratedEntities };
 }
 
+export async function migrateAllDataEncryption(): Promise<{
+  owners: number;
+  memories: number;
+  entities: number;
+  verifiedMemories: number;
+  verifiedEntities: number;
+}> {
+  if (!dataEncryptionEnabled()) {
+    throw new Error('[brainfeather] Data encryption is not enabled.');
+  }
+
+  const [memories, entities] = await Promise.all([
+    listAllDocuments<Pick<MemoryDoc, 'userId'>>(COLLECTIONS.memories, [
+      Query.select(['userId']),
+    ]),
+    listAllDocuments<Pick<EntityDoc, 'userId'>>(COLLECTIONS.entities, [
+      Query.select(['userId']),
+    ]),
+  ]);
+  const owners = new Set([
+    ...memories.map((row) => row.userId),
+    ...entities.map((row) => row.userId),
+  ]);
+  const migrated = {
+    owners: owners.size,
+    memories: 0,
+    entities: 0,
+    verifiedMemories: 0,
+    verifiedEntities: 0,
+  };
+
+  for (const userId of owners) {
+    const result = await migrateOwnedDataEncryption(userId);
+    migrated.memories += result.memories;
+    migrated.entities += result.entities;
+  }
+
+  const [storedMemories, storedEntities] = await Promise.all([
+    listAllDocuments<MemoryDoc>(COLLECTIONS.memories, []),
+    listAllDocuments<StoredEntityDoc>(COLLECTIONS.entities, []),
+  ]);
+
+  for (const row of storedMemories) {
+    if (!isEncryptedValue(row.content)) {
+      throw new Error('[brainfeather] Plaintext memory remained after migration.');
+    }
+    if (row.title && !isEncryptedValue(row.title)) {
+      throw new Error('[brainfeather] Plaintext memory title remained after migration.');
+    }
+    if (row.metadata && !isEncryptedValue(row.metadata)) {
+      throw new Error('[brainfeather] Plaintext memory metadata remained after migration.');
+    }
+    if (row.projectId && !/^[a-f0-9]{64}$/.test(row.projectId)) {
+      throw new Error('[brainfeather] Plaintext project ID remained after migration.');
+    }
+    decryptedMemory(row);
+    migrated.verifiedMemories++;
+  }
+
+  for (const row of storedEntities) {
+    if (!/^[a-f0-9]{64}$/.test(row.name)) {
+      throw new Error('[brainfeather] Plaintext entity name remained after migration.');
+    }
+    if (!row.metadata || !isEncryptedValue(row.metadata)) {
+      throw new Error('[brainfeather] Plaintext entity metadata remained after migration.');
+    }
+    if (row.summary && !isEncryptedValue(row.summary)) {
+      throw new Error('[brainfeather] Plaintext entity summary remained after migration.');
+    }
+    decryptedEntity(row);
+    migrated.verifiedEntities++;
+  }
+
+  return migrated;
+}
+
 function edgeIdForMention(userId: string, memoryId: string, entityId: string): string {
   return createHash('sha256')
     .update(`${userId}\0${memoryId}\0${entityId}\0mentioned_in`)

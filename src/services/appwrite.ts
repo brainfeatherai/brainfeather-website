@@ -1,10 +1,9 @@
 import { account, databases } from '@/lib/appwrite';
 import { ID, Permission, Query, OAuthProvider, Role } from 'appwrite';
-import type { Memory, ContextRule, Team, TeamMember, Decision, Pattern } from '@/types';
+import type { ContextRule, Team, TeamMember, Decision, Pattern } from '@/types';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const USERS_COLLECTION = 'users';
-const MEMORIES_COLLECTION = 'memories';
 const CONTEXT_RULES_COLLECTION = 'context_rules';
 const TEAMS_COLLECTION = 'teams';
 const TEAM_MEMBERS_COLLECTION = 'team_members';
@@ -129,96 +128,9 @@ export const authService = {
   },
 };
 
-// Memory services
-export const memoryService = {
-  async create(memory: Omit<Memory, '$id' | '$createdAt' | '$updatedAt'>) {
-    return await databases.createDocument(
-      DATABASE_ID,
-      MEMORIES_COLLECTION,
-      ID.unique(),
-      memory
-    );
-  },
-
-  async list(userId: string, page = 1, limit = 20) {
-    const response = await databases.listDocuments(
-      DATABASE_ID,
-      MEMORIES_COLLECTION,
-      [
-        Query.equal('userId', userId),
-        Query.orderDesc('$createdAt'),
-        Query.limit(limit),
-        Query.offset((page - 1) * limit),
-      ]
-    );
-    return response;
-  },
-
-  /* Only facts that still hold.
-     `list` above returns superseded rows too, which is right for an audit
-     view and wrong for anything user-facing: the MCP server retracts a fact
-     by setting status 'invalid' rather than deleting it, so an unfiltered
-     read shows a decision next to the decision that replaced it. */
-  async listActive(userId: string, limit = 50) {
-    return await databases.listDocuments(DATABASE_ID, MEMORIES_COLLECTION, [
-      Query.equal('userId', userId),
-      Query.equal('status', 'active'),
-      Query.orderDesc('$createdAt'),
-      Query.limit(limit),
-    ]);
-  },
-
-  async getById(id: string) {
-    return await databases.getDocument(DATABASE_ID, MEMORIES_COLLECTION, id);
-  },
-
-  async update(id: string, data: Partial<Memory>) {
-    return await databases.updateDocument(DATABASE_ID, MEMORIES_COLLECTION, id, data);
-  },
-
-  async delete(id: string) {
-    return await databases.deleteDocument(DATABASE_ID, MEMORIES_COLLECTION, id);
-  },
-
-  async search(userId: string, query: string) {
-    const response = await databases.listDocuments(
-      DATABASE_ID,
-      MEMORIES_COLLECTION,
-      [
-        Query.equal('userId', userId),
-        Query.search('content', query),
-        Query.orderDesc('$createdAt'),
-      ]
-    );
-    return response;
-  },
-
-  async getByCategory(userId: string, category: Memory['category']) {
-    const response = await databases.listDocuments(
-      DATABASE_ID,
-      MEMORIES_COLLECTION,
-      [
-        Query.equal('userId', userId),
-        Query.equal('category', category),
-        Query.orderDesc('$createdAt'),
-      ]
-    );
-    return response;
-  },
-
-  async getBySource(userId: string, source: Memory['source']) {
-    const response = await databases.listDocuments(
-      DATABASE_ID,
-      MEMORIES_COLLECTION,
-      [
-        Query.equal('userId', userId),
-        Query.equal('source', source),
-        Query.orderDesc('$createdAt'),
-      ]
-    );
-    return response;
-  },
-};
+/* Memory access intentionally has no browser-SDK service. Memory fields are
+   encrypted by the authenticated server API, so a client-side database path
+   would bypass the encryption boundary. */
 
 // Context Rule services
 export const contextRuleService = {

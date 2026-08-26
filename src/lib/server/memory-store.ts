@@ -17,8 +17,21 @@ import { createHash } from 'node:crypto';
 import { ID, Query } from 'node-appwrite';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
 import { expand, score } from './concepts';
+import {
+  blindIndex,
+  dataEncryptionEnabled,
+  decryptStoredValue,
+  encryptStoredValue,
+  isEncryptedValue,
+  lookupValues,
+  needsDataEncryption,
+} from './data-encryption';
 
 type CollectionId = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
+
+function isNotFound(error: unknown): boolean {
+  return (error as { code?: number }).code === 404;
+}
 
 async function listAllDocuments<T>(
   collectionId: CollectionId,
@@ -62,6 +75,8 @@ export type EntityDoc = {
   summary?: string;
 };
 
+type StoredEntityDoc = EntityDoc & { metadata?: string };
+
 export type EdgeDoc = {
   $id: string;
   userId: string;
@@ -72,6 +87,223 @@ export type EdgeDoc = {
   validFrom: string;
   validTo?: string;
 };
+
+type StoredMemoryMetadata = {
+  version: 1;
+  metadata?: string;
+  projectId?: string;
+};
+
+type StoredEntityMetadata = {
+  version: 1;
+  name: string;
+};
+
+function memoryContext(
+  userId: string,
+  documentId: string,
+  field: string,
+) {
+  return { userId, collection: COLLECTIONS.memories, documentId, field };
+}
+
+function entityContext(
+  userId: string,
+  documentId: string,
+  field: string,
+) {
+  return { userId, collection: COLLECTIONS.entities, documentId, field };
+}
+
+function storedMemoryData(
+  userId: string,
+  documentId: string,
+  fact: {
+    content: string;
+    category: string;
+    source?: string;
+    title?: string;
+    projectId?: string;
+    metadata?: string;
+  },
+) {
+  if (!dataEncryptionEnabled()) {
+    return {
+      userId,
+      source: fact.source ?? 'manual',
+      title: fact.title ?? '',
+      content: fact.content,
+      category: fact.category,
+      tags: [],
+      status: 'active' as const,
+      ...(fact.projectId ? { projectId: fact.projectId } : {}),
+      ...(fact.metadata ? { metadata: fact.metadata } : {}),
+    };
+  }
+
+  const privateMetadata: StoredMemoryMetadata = {
+    version: 1,
+    ...(fact.metadata ? { metadata: fact.metadata } : {}),
+    ...(fact.projectId ? { projectId: fact.projectId } : {}),
+  };
+
+  return {
+    userId,
+    source: fact.source ?? 'manual',
+    title: encryptStoredValue(
+      fact.title ?? '',
+      memoryContext(userId, documentId, 'title'),
+    ),
+    content: encryptStoredValue(
+      fact.content,
+      memoryContext(userId, documentId, 'content'),
+    ),
+    category: fact.category,
+    tags: [],
+    status: 'active' as const,
+    ...(fact.projectId
+      ? { projectId: blindIndex(fact.projectId, userId, 'memory.projectId') }
+      : {}),
+    ...(fact.metadata || fact.projectId
+      ? {
+          metadata: encryptStoredValue(
+            JSON.stringify(privateMetadata),
+            memoryContext(userId, documentId, 'metadata'),
+          ),
+        }
+      : {}),
+  };
+}
+
+function decryptedMemory(row: MemoryDoc): MemoryDoc {
+  let projectId = row.projectId;
+  let metadata = row.metadata;
+
+  if (metadata && isEncryptedValue(metadata)) {
+    const parsed = JSON.parse(
+      decryptStoredValue(metadata, memoryContext(row.userId, row.$id, 'metadata')),
+    ) as StoredMemoryMetadata;
+    if (parsed.version !== 1) {
+      throw new Error('[brainfeather] Unsupported encrypted memory metadata version.');
+    }
+    projectId = parsed.projectId;
+    metadata = parsed.metadata;
+  }
+
+  return {
+    ...row,
+    title: row.title
+      ? decryptStoredValue(row.title, memoryContext(row.userId, row.$id, 'title'))
+      : row.title,
+    content: decryptStoredValue(
+      row.content,
+      memoryContext(row.userId, row.$id, 'content'),
+    ),
+    projectId,
+    metadata,
+  };
+}
+
+function decryptedEntity(row: StoredEntityDoc): EntityDoc {
+  let name = row.name;
+  if (row.metadata && isEncryptedValue(row.metadata)) {
+    const parsed = JSON.parse(
+      decryptStoredValue(
+        row.metadata,
+        entityContext(row.userId, row.$id, 'metadata'),
+      ),
+    ) as StoredEntityMetadata;
+    if (parsed.version !== 1 || typeof parsed.name !== 'string') {
+      throw new Error('[brainfeather] Unsupported encrypted entity metadata version.');
+    }
+    name = parsed.name;
+  }
+
+  return {
+    $id: row.$id,
+    userId: row.userId,
+    name,
+    type: row.type,
+    summary: row.summary
+      ? decryptStoredValue(
+          row.summary,
+          entityContext(row.userId, row.$id, 'summary'),
+        )
+      : row.summary,
+  };
+}
+
+export async function migrateOwnedDataEncryption(userId: string): Promise<{
+  memories: number;
+  entities: number;
+}> {
+  if (!dataEncryptionEnabled()) {
+    throw new Error('[brainfeather] Data encryption is not enabled.');
+  }
+
+  const [memoryRows, entityRows] = await Promise.all([
+    listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [Query.equal('userId', userId)]),
+    listAllDocuments<StoredEntityDoc>(COLLECTIONS.entities, [
+      Query.equal('userId', userId),
+    ]),
+  ]);
+
+  let migratedMemories = 0;
+  for (const row of memoryRows) {
+    const plaintext = decryptedMemory(row);
+    const needsMigration =
+      needsDataEncryption(row.content) ||
+      Boolean(row.title && needsDataEncryption(row.title)) ||
+      Boolean(row.metadata && needsDataEncryption(row.metadata)) ||
+      (Boolean(plaintext.projectId) && row.projectId === plaintext.projectId);
+    if (!needsMigration) continue;
+
+    const encrypted = storedMemoryData(userId, row.$id, {
+      content: plaintext.content,
+      category: plaintext.category,
+      source: plaintext.source,
+      title: plaintext.title,
+      projectId: plaintext.projectId,
+      metadata: plaintext.metadata,
+    });
+    await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.memories, row.$id, {
+      title: encrypted.title,
+      content: encrypted.content,
+      ...(encrypted.projectId ? { projectId: encrypted.projectId } : {}),
+      ...(encrypted.metadata ? { metadata: encrypted.metadata } : {}),
+    });
+    migratedMemories++;
+  }
+
+  let migratedEntities = 0;
+  for (const row of entityRows) {
+    const plaintext = decryptedEntity(row);
+    const needsMigration =
+      !row.metadata ||
+      needsDataEncryption(row.metadata) ||
+      Boolean(row.summary && needsDataEncryption(row.summary));
+    if (!needsMigration) continue;
+
+    await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.entities, row.$id, {
+      name: blindIndex(plaintext.name, userId, 'entity.name'),
+      metadata: encryptStoredValue(
+        JSON.stringify({ version: 1, name: plaintext.name } satisfies StoredEntityMetadata),
+        entityContext(userId, row.$id, 'metadata'),
+      ),
+      ...(plaintext.summary
+        ? {
+            summary: encryptStoredValue(
+              plaintext.summary,
+              entityContext(userId, row.$id, 'summary'),
+            ),
+          }
+        : {}),
+    });
+    migratedEntities++;
+  }
+
+  return { memories: migratedMemories, entities: migratedEntities };
+}
 
 function edgeIdForMention(userId: string, memoryId: string, entityId: string): string {
   return createHash('sha256')
@@ -127,23 +359,35 @@ export async function listActive(
      so this stays a single round trip. strictScope is used by MCP and
      returns only memories explicitly assigned to the current project. */
   if (opts.projectId && opts.strictScope) {
-    queries.push(Query.equal('projectId', opts.projectId));
+    queries.push(
+      Query.equal(
+        'projectId',
+        lookupValues(opts.projectId, userId, 'memory.projectId'),
+      ),
+    );
   } else if (opts.projectId) {
     queries.push(
-      Query.or([Query.equal('projectId', opts.projectId), Query.isNull('projectId')]),
+      Query.or([
+        Query.equal(
+          'projectId',
+          lookupValues(opts.projectId, userId, 'memory.projectId'),
+        ),
+        Query.isNull('projectId'),
+      ]),
     );
   }
 
   const res = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.memories, queries);
-  return res.documents as unknown as MemoryDoc[];
+  return (res.documents as unknown as MemoryDoc[]).map(decryptedMemory);
 }
 
-export function listAllActive(userId: string): Promise<MemoryDoc[]> {
-  return listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
+export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
+  const rows = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
     Query.equal('status', 'active'),
     Query.orderDesc('$createdAt'),
   ]);
+  return rows.map(decryptedMemory);
 }
 
 /* Concept-expanded search over active facts.
@@ -203,30 +447,20 @@ export async function createMemory(
   },
 ): Promise<MemoryDoc> {
   const documentId = ID.unique();
-  const data = {
-    userId,
-    source: fact.source ?? 'manual',
-    title: fact.title ?? '',
-    content: fact.content,
-    category: fact.category,
-    tags: [],
-    status: 'active',
-    ...(fact.projectId ? { projectId: fact.projectId } : {}),
-    ...(fact.metadata ? { metadata: fact.metadata } : {}),
-  };
+  const data = storedMemoryData(userId, documentId, fact);
 
   let transactionId: string | undefined;
   try {
     if (fact.supersedeIds?.length) {
       transactionId = (await adminDb.createTransaction({ ttl: 60 })).$id;
       for (const id of fact.supersedeIds) {
-        const target = (await adminDb.getDocument(
+        const target = decryptedMemory((await adminDb.getDocument(
           DATABASE_ID,
           COLLECTIONS.memories,
           id,
           undefined,
           transactionId,
-        )) as unknown as MemoryDoc;
+        )) as unknown as MemoryDoc);
         if (
           target.userId !== userId ||
           (target.projectId ?? null) !== (fact.projectId ?? null) ||
@@ -257,7 +491,7 @@ export async function createMemory(
       );
       await adminDb.updateTransaction({ transactionId, commit: true });
     }
-    return document as unknown as MemoryDoc;
+    return decryptedMemory(document as unknown as MemoryDoc);
   } catch (error) {
     if (transactionId) {
       await adminDb
@@ -274,16 +508,17 @@ export async function getMemory(
   projectId?: string,
 ): Promise<MemoryDoc | null> {
   try {
-    const memory = (await adminDb.getDocument(
+    const memory = decryptedMemory((await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.memories,
       id,
-    )) as unknown as MemoryDoc;
+    )) as unknown as MemoryDoc);
     if (memory.userId !== userId) return null;
     if (projectId !== undefined && memory.projectId !== projectId) return null;
     return memory;
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
   }
 }
 
@@ -294,13 +529,14 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
   if (!ids.length) return;
   const transaction = await adminDb.createTransaction({ ttl: 60 });
   try {
-    const replacement = (await adminDb.getDocument(
+    const storedReplacement = (await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.memories,
       byId,
       undefined,
       transaction.$id,
     )) as unknown as MemoryDoc;
+    const replacement = decryptedMemory(storedReplacement);
     if (replacement.status !== 'active') {
       throw new Error('Replacement memory is not active.');
     }
@@ -308,18 +544,18 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
       databaseId: DATABASE_ID,
       collectionId: COLLECTIONS.memories,
       documentId: byId,
-      data: { content: replacement.content },
+      data: { content: storedReplacement.content },
       transactionId: transaction.$id,
     });
     await Promise.all(
       ids.map(async (id) => {
-        const target = (await adminDb.getDocument(
+        const target = decryptedMemory((await adminDb.getDocument(
           DATABASE_ID,
           COLLECTIONS.memories,
           id,
           undefined,
           transaction.$id,
-        )) as unknown as MemoryDoc;
+        )) as unknown as MemoryDoc);
         if (
           target.userId !== replacement.userId ||
           (target.projectId ?? null) !== (replacement.projectId ?? null) ||
@@ -353,15 +589,16 @@ export async function deleteMemory(
   projectId?: string,
 ): Promise<boolean> {
   try {
-    const doc = (await adminDb.getDocument(
+    const doc = decryptedMemory((await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.memories,
       id,
-    )) as unknown as MemoryDoc;
+    )) as unknown as MemoryDoc);
     if (doc.userId !== userId) return false;
     if (projectId && doc.projectId !== projectId) return false;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw error;
   }
   const edges = await edgesForNode(userId, id);
   await Promise.all(
@@ -383,24 +620,42 @@ export async function updateMemory(
   projectId?: string,
 ): Promise<MemoryDoc | null> {
   let doc: MemoryDoc;
+  let storedDoc: MemoryDoc;
   try {
-    doc = (await adminDb.getDocument(
+    storedDoc = (await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.memories,
       id,
     )) as unknown as MemoryDoc;
+    doc = decryptedMemory(storedDoc);
     if (doc.userId !== userId) return null;
     if (projectId !== undefined && doc.projectId !== projectId) return null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
   }
+  const storedData = {
+    ...data,
+    ...(data.content !== undefined
+      ? {
+          content:
+            dataEncryptionEnabled() || isEncryptedValue(storedDoc.content)
+              ? encryptStoredValue(
+                  data.content,
+                  memoryContext(userId, id, 'content'),
+                  true,
+                )
+              : data.content,
+        }
+      : {}),
+  };
   const updated = await adminDb.updateDocument(
     DATABASE_ID,
     COLLECTIONS.memories,
     id,
-    data,
+    storedData,
   );
-  return updated as unknown as MemoryDoc;
+  return decryptedMemory(updated as unknown as MemoryDoc);
 }
 
 /* ── Entities ───────────────────────────────────────────────────── */
@@ -408,7 +663,8 @@ export async function updateMemory(
 export async function listEntities(userId: string, type?: string): Promise<EntityDoc[]> {
   const queries = [Query.equal('userId', userId)];
   if (type) queries.push(Query.equal('type', type));
-  return listAllDocuments<EntityDoc>(COLLECTIONS.entities, queries);
+  const rows = await listAllDocuments<StoredEntityDoc>(COLLECTIONS.entities, queries);
+  return rows.map(decryptedEntity);
 }
 
 async function edgesForMemoryIds(
@@ -451,7 +707,10 @@ async function projectGraphScope(
   const memories = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
     Query.equal('status', 'active'),
-    Query.equal('projectId', projectId),
+    Query.equal(
+      'projectId',
+      lookupValues(projectId, userId, 'memory.projectId'),
+    ),
     Query.orderDesc('$createdAt'),
   ]);
   const memoryIds = new Set(memories.map((memory) => memory.$id));
@@ -477,13 +736,13 @@ export async function listProjectEntities(
   const entities = (
     await Promise.all(
       chunks.map((chunk) =>
-        listAllDocuments<EntityDoc>(COLLECTIONS.entities, [
+        listAllDocuments<StoredEntityDoc>(COLLECTIONS.entities, [
           Query.equal('userId', userId),
           Query.equal('$id', chunk),
         ]),
       ),
     )
-  ).flat();
+  ).flat().map(decryptedEntity);
 
   return type ? entities.filter((entity) => entity.type === type) : entities;
 }
@@ -495,46 +754,89 @@ export async function upsertEntity(
   summary?: string,
 ): Promise<EntityDoc> {
   const entityId = ID.custom(
-    createHash('sha256')
-      .update(`${userId}\0${name.toLowerCase()}`)
-      .digest('hex')
+    (dataEncryptionEnabled()
+      ? blindIndex(name.toLowerCase(), userId, 'entity.name')
+      : createHash('sha256')
+          .update(`${userId}\0${name.toLowerCase()}`)
+          .digest('hex'))
       .slice(0, 36),
   );
   const existing = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.entities, [
     Query.equal('userId', userId),
-    Query.equal('name', name),
+    Query.equal('name', lookupValues(name, userId, 'entity.name')),
     Query.limit(1),
   ]);
 
-  const found = existing.documents[0];
+  const found = existing.documents[0] as unknown as StoredEntityDoc | undefined;
   if (found) {
-    if (summary) {
+    const preserveEncryption = Boolean(
+      found.metadata && isEncryptedValue(found.metadata),
+    );
+    if (summary || dataEncryptionEnabled() || preserveEncryption) {
+      const current = decryptedEntity(found);
       const updated = await adminDb.updateDocument(
         DATABASE_ID,
         COLLECTIONS.entities,
         found.$id,
-        { summary },
+        dataEncryptionEnabled() || preserveEncryption
+          ? {
+              name: blindIndex(name, userId, 'entity.name'),
+              metadata: encryptStoredValue(
+                JSON.stringify({ version: 1, name } satisfies StoredEntityMetadata),
+                entityContext(userId, found.$id, 'metadata'),
+                true,
+              ),
+              ...(summary || current.summary
+                ? {
+                    summary: encryptStoredValue(
+                      summary ?? current.summary!,
+                      entityContext(userId, found.$id, 'summary'),
+                      true,
+                    ),
+                  }
+                : {}),
+            }
+          : { summary },
       );
-      return updated as unknown as EntityDoc;
+      return decryptedEntity(updated as unknown as StoredEntityDoc);
     }
-    return found as unknown as EntityDoc;
+    return decryptedEntity(found);
   }
 
   try {
+    const data = dataEncryptionEnabled()
+      ? {
+          userId,
+          name: blindIndex(name, userId, 'entity.name'),
+          type,
+          metadata: encryptStoredValue(
+            JSON.stringify({ version: 1, name } satisfies StoredEntityMetadata),
+            entityContext(userId, entityId, 'metadata'),
+          ),
+          ...(summary
+            ? {
+                summary: encryptStoredValue(
+                  summary,
+                  entityContext(userId, entityId, 'summary'),
+                ),
+              }
+            : {}),
+        }
+      : { userId, name, type, ...(summary ? { summary } : {}) };
     const doc = await adminDb.createDocument(
       DATABASE_ID,
       COLLECTIONS.entities,
       entityId,
-      { userId, name, type, ...(summary ? { summary } : {}) },
+      data,
     );
-    return doc as unknown as EntityDoc;
+    return decryptedEntity(doc as unknown as StoredEntityDoc);
   } catch (error) {
     if ((error as { code?: number }).code !== 409) throw error;
-    return (await adminDb.getDocument(
+    return decryptedEntity((await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.entities,
       entityId,
-    )) as unknown as EntityDoc;
+    )) as unknown as StoredEntityDoc);
   }
 }
 
@@ -551,8 +853,9 @@ export async function deleteEntity(userId: string, id: string): Promise<boolean>
       id,
     )) as unknown as EntityDoc;
     if (doc.userId !== userId) return false;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw error;
   }
 
   const edges = await edgesForNode(userId, id);
@@ -626,13 +929,14 @@ export async function syncMentionEdges(
 ): Promise<void> {
   const transaction = await adminDb.createTransaction({ ttl: 60 });
   try {
-    const memory = (await adminDb.getDocument(
+    const storedMemory = (await adminDb.getDocument(
       DATABASE_ID,
       COLLECTIONS.memories,
       memoryId,
       undefined,
       transaction.$id,
     )) as unknown as MemoryDoc;
+    const memory = decryptedMemory(storedMemory);
     if (memory.userId !== userId) throw new Error('Memory does not belong to this user.');
     if (expectedContent !== undefined && memory.content !== expectedContent) {
       await adminDb.updateTransaction({ transactionId: transaction.$id, rollback: true });
@@ -642,7 +946,7 @@ export async function syncMentionEdges(
       databaseId: DATABASE_ID,
       collectionId: COLLECTIONS.memories,
       documentId: memoryId,
-      data: { content: memory.content },
+      data: { content: storedMemory.content },
       transactionId: transaction.$id,
     });
 
@@ -717,8 +1021,9 @@ export async function deleteEdge(userId: string, id: string): Promise<boolean> {
       id,
     )) as unknown as EdgeDoc;
     if (doc.userId !== userId) return false;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw error;
   }
   await adminDb.deleteDocument(DATABASE_ID, COLLECTIONS.edges, id);
   return true;
@@ -778,13 +1083,13 @@ export async function traverseGraph(
   const entities = (
     await Promise.all(
       chunks.map((chunk) =>
-        listAllDocuments<EntityDoc>(COLLECTIONS.entities, [
+        listAllDocuments<StoredEntityDoc>(COLLECTIONS.entities, [
           Query.equal('userId', userId),
           Query.equal('$id', chunk),
         ]),
       ),
     )
-  ).flat();
+  ).flat().map(decryptedEntity);
 
   return { entities, edges: [...edges.values()] };
 }

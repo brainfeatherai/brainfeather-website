@@ -1,6 +1,8 @@
 import { performance } from 'node:perf_hooks';
 import { expand, score } from '../src/lib/server/concepts.ts';
 import { rankMemories, type RankableMemory } from '../src/lib/server/retrieval-ranking.ts';
+import { compileContext, estimateTokens } from '../src/lib/server/context-compiler.ts';
+import { memoryIsVisibleAt } from '../src/lib/server/memory-temporal.ts';
 
 const NOW = Date.parse('2026-08-27T00:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -78,6 +80,36 @@ const report = {
   legacy: metrics(legacy),
   hybrid: metrics(hybrid),
   latencyMs: { average: averageLatencyMs, p95: p95LatencyMs },
+  temporal: {
+    beforeChange: memoryIsVisibleAt(
+      {
+        status: 'invalid',
+        $createdAt: '2025-01-01T00:00:00Z',
+        metadata: JSON.stringify({ vf: '2025-01-01T00:00:00Z', vt: '2026-01-01T00:00:00Z' }),
+      },
+      Date.parse('2025-06-01T00:00:00Z'),
+    ),
+    afterChange: memoryIsVisibleAt(
+      {
+        status: 'invalid',
+        $createdAt: '2025-01-01T00:00:00Z',
+        metadata: JSON.stringify({ vf: '2025-01-01T00:00:00Z', vt: '2026-01-01T00:00:00Z' }),
+      },
+      Date.parse('2026-06-01T00:00:00Z'),
+    ),
+  },
+  contextBudget: (() => {
+    const maxTokens =
+      estimateTokens(memories[0].content) + estimateTokens(memories[1].content);
+    const context = compileContext(
+      memories.map((memory, index) => ({
+        ...memory,
+        category: index === 0 ? 'decision' : index === 1 ? 'code' : 'project',
+      })),
+      { query: 'auth testing', maxTokens, asOfMs: NOW },
+    );
+    return { selected: context.counts.total, maxTokens };
+  })(),
 };
 console.log(JSON.stringify(report, null, 2));
 
@@ -85,6 +117,9 @@ if (
   report.hybrid.hitAtThree < 1 ||
   report.hybrid.abstentionAccuracy < 1 ||
   report.hybrid.mrr < report.legacy.mrr ||
+  !report.temporal.beforeChange ||
+  report.temporal.afterChange ||
+  report.contextBudget.selected !== 2 ||
   report.latencyMs.p95 > 10
 ) {
   process.exitCode = 1;

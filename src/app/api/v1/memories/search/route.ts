@@ -10,7 +10,7 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { search } from '@/lib/server/memory-store';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { CATEGORIES, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
+import { CATEGORIES, dateTime, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
 
 async function searchMemories(request: Request) {
   const auth = await authenticate(request);
@@ -22,6 +22,13 @@ async function searchMemories(request: Request) {
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   const q = params.get('q') ?? params.get('query');
   if (!q) return fail(400, 'Missing required query parameter: q');
+  let referenceAtMs: number | undefined;
+  const rawReferenceAt = params.get('referenceAt');
+  if (rawReferenceAt) {
+    const parsed = dateTime(rawReferenceAt, 'referenceAt');
+    if (!parsed.ok) return fail(400, parsed.error);
+    referenceAtMs = parsed.ms;
+  }
 
   const rawCategory = params.get('category');
   if (rawCategory) {
@@ -34,6 +41,7 @@ async function searchMemories(request: Request) {
     projectId,
     strictScope,
     limit: limitOf(params.get('limit'), 10, 25),
+    referenceAtMs,
   });
 
   return Response.json({ memories, count: memories.length, query: q });

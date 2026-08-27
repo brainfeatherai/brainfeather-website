@@ -18,6 +18,12 @@ import { ID, Query } from 'node-appwrite';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
 import { rankMemories } from './retrieval-ranking';
 import {
+  invalidateMemoryMetadata,
+  memoryIsVisibleAt,
+  normalizeMemoryMetadata,
+  reviveMemoryMetadata,
+} from './memory-temporal';
+import {
   blindIndex,
   dataEncryptionEnabled,
   decryptStoredValue,
@@ -65,6 +71,7 @@ export type MemoryDoc = {
   supersededBy?: string;
   projectId?: string;
   metadata?: string;
+  temporal?: ReturnType<typeof normalizeMemoryMetadata>;
 };
 
 export type EntityDoc = {
@@ -88,11 +95,9 @@ export type EdgeDoc = {
   validTo?: string;
 };
 
-type StoredMemoryMetadata = {
-  version: 1;
-  metadata?: string;
-  projectId?: string;
-};
+type StoredMemoryMetadata =
+  | { version: 1; metadata?: string; projectId?: string }
+  | { v: 2; m?: string; p?: string };
 
 type StoredEntityMetadata = {
   version: 1;
@@ -142,9 +147,9 @@ function storedMemoryData(
   }
 
   const privateMetadata: StoredMemoryMetadata = {
-    version: 1,
-    ...(fact.metadata ? { metadata: fact.metadata } : {}),
-    ...(fact.projectId ? { projectId: fact.projectId } : {}),
+    v: 2,
+    ...(fact.metadata ? { m: fact.metadata } : {}),
+    ...(fact.projectId ? { p: fact.projectId } : {}),
   };
 
   return {
@@ -175,6 +180,26 @@ function storedMemoryData(
   };
 }
 
+function storedMemoryMetadata(
+  userId: string,
+  documentId: string,
+  metadata: string,
+  projectId: string | undefined,
+  forceEncryption: boolean,
+): string {
+  if (!forceEncryption && !dataEncryptionEnabled()) return metadata;
+  const value = JSON.stringify({
+    v: 2,
+    m: metadata,
+    ...(projectId ? { p: projectId } : {}),
+  } satisfies StoredMemoryMetadata);
+  return encryptStoredValue(
+    value,
+    memoryContext(userId, documentId, 'metadata'),
+    true,
+  );
+}
+
 function decryptedMemory(row: MemoryDoc): MemoryDoc {
   let projectId = row.projectId;
   let metadata = row.metadata;
@@ -183,12 +208,13 @@ function decryptedMemory(row: MemoryDoc): MemoryDoc {
     const parsed = JSON.parse(
       decryptStoredValue(metadata, memoryContext(row.userId, row.$id, 'metadata')),
     ) as StoredMemoryMetadata;
-    if (parsed.version !== 1) {
+    if (!('version' in parsed ? parsed.version === 1 : parsed.v === 2)) {
       throw new Error('[brainfeather] Unsupported encrypted memory metadata version.');
     }
-    projectId = parsed.projectId;
-    metadata = parsed.metadata;
+    projectId = 'version' in parsed ? parsed.projectId : parsed.p;
+    metadata = 'version' in parsed ? parsed.metadata : parsed.m;
   }
+  const temporal = normalizeMemoryMetadata(metadata, row.$createdAt);
 
   return {
     ...row,
@@ -201,6 +227,7 @@ function decryptedMemory(row: MemoryDoc): MemoryDoc {
     ),
     projectId,
     metadata,
+    temporal,
   };
 }
 
@@ -336,13 +363,15 @@ export async function listActive(
     projectId?: string;
     limit?: number;
     strictScope?: boolean;
+    referenceAtMs?: number;
   } = {},
 ): Promise<MemoryDoc[]> {
+  const limit = opts.limit ?? 50;
+  const retrievalWindow = Math.max(limit, 500);
   const queries = [
     Query.equal('userId', userId),
-    Query.equal('status', 'active'),
     Query.orderDesc('$createdAt'),
-    Query.limit(opts.limit ?? 50),
+    Query.limit(retrievalWindow),
   ];
   if (opts.category) queries.push(Query.equal('category', opts.category));
 
@@ -378,16 +407,20 @@ export async function listActive(
   }
 
   const res = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.memories, queries);
-  return (res.documents as unknown as MemoryDoc[]).map(decryptedMemory);
+  const referenceAtMs = opts.referenceAtMs ?? Date.now();
+  return (res.documents as unknown as MemoryDoc[])
+    .map(decryptedMemory)
+    .filter((memory) => memoryIsVisibleAt(memory, referenceAtMs))
+    .slice(0, limit);
 }
 
 export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
   const rows = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
-    Query.equal('status', 'active'),
     Query.orderDesc('$createdAt'),
   ]);
-  return rows.map(decryptedMemory);
+  const now = Date.now();
+  return rows.map(decryptedMemory).filter((memory) => memoryIsVisibleAt(memory, now));
 }
 
 /* Hybrid retrieval over active, already-decrypted facts.
@@ -414,12 +447,13 @@ export async function search(
     projectId?: string;
     limit?: number;
     strictScope?: boolean;
+    referenceAtMs?: number;
   } = {},
 ): Promise<MemoryDoc[]> {
   const limit = opts.limit ?? 10;
   const pool = await listActive(userId, { ...opts, limit: 100 });
 
-  return rankMemories(pool, query, { limit });
+  return rankMemories(pool, query, { limit, asOfMs: opts.referenceAtMs });
 }
 
 export async function createMemory(
@@ -438,17 +472,31 @@ export async function createMemory(
   const data = storedMemoryData(userId, documentId, fact);
 
   let transactionId: string | undefined;
+  let invalidatedAt: string | undefined;
+  let validTo: string | undefined;
+  const supersessionTargets = new Map<
+    string,
+    { stored: MemoryDoc; plaintext: MemoryDoc }
+  >();
   try {
     if (fact.supersedeIds?.length) {
+      invalidatedAt = new Date().toISOString();
+      validTo = normalizeMemoryMetadata(fact.metadata, invalidatedAt).validFrom;
+      if (Date.parse(validTo) > Date.parse(invalidatedAt)) {
+        throw new Error(
+          'A future-effective memory cannot supersede current facts without a scheduler.',
+        );
+      }
       transactionId = (await adminDb.createTransaction({ ttl: 60 })).$id;
       for (const id of fact.supersedeIds) {
-        const target = decryptedMemory((await adminDb.getDocument(
+        const storedTarget = (await adminDb.getDocument(
           DATABASE_ID,
           COLLECTIONS.memories,
           id,
           undefined,
           transactionId,
-        )) as unknown as MemoryDoc);
+        )) as unknown as MemoryDoc;
+        const target = decryptedMemory(storedTarget);
         if (
           target.userId !== userId ||
           (target.projectId ?? null) !== (fact.projectId ?? null) ||
@@ -456,6 +504,7 @@ export async function createMemory(
         ) {
           throw new Error('Supersession target is not active in this project.');
         }
+        supersessionTargets.set(id, { stored: storedTarget, plaintext: target });
       }
     }
     const document = await adminDb.createDocument({
@@ -467,15 +516,44 @@ export async function createMemory(
     });
     if (transactionId) {
       await Promise.all(
-        fact.supersedeIds!.map((id) =>
-          adminDb.updateDocument({
+        fact.supersedeIds!.map(async (id) => {
+          const target = supersessionTargets.get(id);
+          if (!target || !invalidatedAt || !validTo) {
+            throw new Error('Supersession target state was lost.');
+          }
+          const metadata = invalidateMemoryMetadata(
+            target.plaintext.metadata,
+            invalidatedAt,
+            new Date(
+              Math.max(
+                Date.parse(
+                  normalizeMemoryMetadata(
+                    target.plaintext.metadata,
+                    target.plaintext.$createdAt,
+                  ).validFrom,
+                ),
+                Date.parse(validTo),
+              ),
+            ).toISOString(),
+          );
+          return adminDb.updateDocument({
             databaseId: DATABASE_ID,
             collectionId: COLLECTIONS.memories,
             documentId: id,
-            data: { status: 'invalid', supersededBy: documentId },
+            data: {
+              status: 'invalid',
+              supersededBy: documentId,
+              metadata: storedMemoryMetadata(
+                userId,
+                id,
+                metadata,
+                target.plaintext.projectId,
+                dataEncryptionEnabled() || isEncryptedValue(target.stored.metadata ?? ''),
+              ),
+            },
             transactionId,
-          }),
-        ),
+          });
+        }),
       );
       await adminDb.updateTransaction({ transactionId, commit: true });
     }
@@ -525,6 +603,16 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
       transaction.$id,
     )) as unknown as MemoryDoc;
     const replacement = decryptedMemory(storedReplacement);
+    const invalidatedAt = new Date().toISOString();
+    const validTo = normalizeMemoryMetadata(
+      replacement.metadata,
+      replacement.$createdAt,
+    ).validFrom;
+    if (Date.parse(validTo) > Date.parse(invalidatedAt)) {
+      throw new Error(
+        'A future-effective memory cannot supersede current facts without a scheduler.',
+      );
+    }
     if (replacement.status !== 'active') {
       throw new Error('Replacement memory is not active.');
     }
@@ -537,13 +625,14 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
     });
     await Promise.all(
       ids.map(async (id) => {
-        const target = decryptedMemory((await adminDb.getDocument(
+        const storedTarget = (await adminDb.getDocument(
           DATABASE_ID,
           COLLECTIONS.memories,
           id,
           undefined,
           transaction.$id,
-        )) as unknown as MemoryDoc);
+        )) as unknown as MemoryDoc;
+        const target = decryptedMemory(storedTarget);
         if (
           target.userId !== replacement.userId ||
           (target.projectId ?? null) !== (replacement.projectId ?? null) ||
@@ -551,13 +640,36 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
         ) {
           throw new Error('Supersession target is not active in this project.');
         }
-        if (target.status === 'active') await adminDb.updateDocument({
-          databaseId: DATABASE_ID,
-          collectionId: COLLECTIONS.memories,
-          documentId: id,
-          data: { status: 'invalid', supersededBy: byId },
-          transactionId: transaction.$id,
-        });
+        if (target.status === 'active') {
+          const targetValidFrom = normalizeMemoryMetadata(
+            target.metadata,
+            target.$createdAt,
+          ).validFrom;
+          const metadata = invalidateMemoryMetadata(
+            target.metadata,
+            invalidatedAt,
+            new Date(
+              Math.max(Date.parse(targetValidFrom), Date.parse(validTo)),
+            ).toISOString(),
+          );
+          await adminDb.updateDocument({
+            databaseId: DATABASE_ID,
+            collectionId: COLLECTIONS.memories,
+            documentId: id,
+            data: {
+              status: 'invalid',
+              supersededBy: byId,
+              metadata: storedMemoryMetadata(
+                target.userId,
+                id,
+                metadata,
+                target.projectId,
+                dataEncryptionEnabled() || isEncryptedValue(storedTarget.metadata ?? ''),
+              ),
+            },
+            transactionId: transaction.$id,
+          });
+        }
       }),
     );
     await adminDb.updateTransaction({ transactionId: transaction.$id, commit: true });
@@ -604,7 +716,13 @@ export async function deleteMemory(
 export async function updateMemory(
   userId: string,
   id: string,
-  data: { content?: string; category?: string; status?: 'active' | 'invalid'; supersededBy?: string },
+  data: {
+    content?: string;
+    category?: string;
+    status?: 'active' | 'invalid';
+    supersededBy?: string;
+    validTo?: string;
+  },
   projectId?: string,
 ): Promise<MemoryDoc | null> {
   let doc: MemoryDoc;
@@ -624,6 +742,23 @@ export async function updateMemory(
   }
   const storedData = {
     ...data,
+    ...(data.status !== undefined
+      ? {
+          metadata: storedMemoryMetadata(
+            userId,
+            id,
+            data.status === 'invalid'
+              ? invalidateMemoryMetadata(
+                  doc.metadata,
+                  new Date().toISOString(),
+                  data.validTo,
+                )
+              : reviveMemoryMetadata(doc.metadata),
+            doc.projectId,
+            dataEncryptionEnabled() || isEncryptedValue(storedDoc.metadata ?? ''),
+          ),
+        }
+      : {}),
     ...(data.content !== undefined
       ? {
           content:
@@ -637,6 +772,15 @@ export async function updateMemory(
         }
       : {}),
   };
+  if (data.status === 'invalid' && data.validTo) {
+    const validFrom = Date.parse(
+      normalizeMemoryMetadata(doc.metadata, doc.$createdAt).validFrom,
+    );
+    if (Date.parse(data.validTo) <= validFrom) {
+      throw new Error('validTo must be after the memory validFrom time.');
+    }
+  }
+  delete storedData.validTo;
   const updated = await adminDb.updateDocument(
     DATABASE_ID,
     COLLECTIONS.memories,
@@ -692,15 +836,18 @@ async function projectGraphScope(
   userId: string,
   projectId: string,
 ): Promise<{ memoryIds: Set<string>; entityIds: Set<string> }> {
-  const memories = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
+  const storedMemories = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
-    Query.equal('status', 'active'),
     Query.equal(
       'projectId',
       lookupValues(projectId, userId, 'memory.projectId'),
     ),
     Query.orderDesc('$createdAt'),
   ]);
+  const now = Date.now();
+  const memories = storedMemories
+    .map(decryptedMemory)
+    .filter((memory) => memoryIsVisibleAt(memory, now));
   const memoryIds = new Set(memories.map((memory) => memory.$id));
   const linkedEdges = await edgesForMemoryIds(userId, [...memoryIds]);
   const entityIds = new Set<string>();

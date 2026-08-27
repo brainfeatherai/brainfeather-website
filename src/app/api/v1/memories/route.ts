@@ -13,11 +13,17 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { listActive } from '@/lib/server/memory-store';
+import {
+  PROVENANCE_TYPES,
+  TEMPORAL_TYPES,
+  type MemoryProvenance,
+} from '@/lib/server/memory-temporal';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { think } from '@/lib/server/think';
 import {
   CATEGORIES,
+  dateTime,
   SOURCES,
   limitOf,
   oneOf,
@@ -35,6 +41,13 @@ async function listMemories(request: Request) {
   const projectId = params.get('projectId') ?? undefined;
   const strictScope = strictScopeOf(params);
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
+  let referenceAtMs: number | undefined;
+  const rawReferenceAt = params.get('referenceAt');
+  if (rawReferenceAt) {
+    const parsed = dateTime(rawReferenceAt, 'referenceAt');
+    if (!parsed.ok) return fail(400, parsed.error);
+    referenceAtMs = parsed.ms;
+  }
 
   const rawCategory = params.get('category');
   if (rawCategory) {
@@ -47,6 +60,7 @@ async function listMemories(request: Request) {
     projectId,
     strictScope,
     limit: limitOf(params.get('limit')),
+    referenceAtMs,
   });
 
   return Response.json({ memories, count: memories.length });
@@ -106,13 +120,88 @@ async function createMemory(request: Request) {
       supersedesId = parsed.value;
     }
 
-    const provenance =
-      body.provenance === undefined
-        ? undefined
-        : body.provenance === 'user_stated'
-          ? 'user_stated'
-          : null;
-    if (provenance === null) return fail(400, 'provenance must be user_stated.');
+    let observedAt: string | undefined;
+    if (body.observedAt !== undefined) {
+      const parsed = dateTime(body.observedAt, 'observedAt');
+      if (!parsed.ok) return fail(400, parsed.error);
+      if (parsed.ms > Date.now() + 5 * 60 * 1000) {
+        return fail(400, 'observedAt cannot be in the future.');
+      }
+      observedAt = parsed.value;
+    }
+
+    let validFrom: string | undefined;
+    if (body.validFrom !== undefined) {
+      const parsed = dateTime(body.validFrom, 'validFrom');
+      if (!parsed.ok) return fail(400, parsed.error);
+      validFrom = parsed.value;
+    }
+
+    let validTo: string | undefined;
+    if (body.validTo !== undefined) {
+      const parsed = dateTime(body.validTo, 'validTo');
+      if (!parsed.ok) return fail(400, parsed.error);
+      validTo = parsed.value;
+    }
+    if (
+      validTo &&
+      Date.parse(validTo) <= Date.parse(validFrom ?? observedAt ?? new Date().toISOString())
+    ) {
+      return fail(400, 'validTo must be after validFrom.');
+    }
+
+    let temporalType: (typeof TEMPORAL_TYPES)[number] | undefined;
+    if (body.temporalType !== undefined) {
+      const parsed = oneOf(body.temporalType, TEMPORAL_TYPES, 'temporalType');
+      if (!parsed.ok) return fail(400, parsed.error);
+      temporalType = parsed.value;
+    }
+
+    let confidence: number | undefined;
+    if (body.confidence !== undefined) {
+      if (
+        typeof body.confidence !== 'number' ||
+        !Number.isFinite(body.confidence) ||
+        body.confidence < 0 ||
+        body.confidence > 1
+      ) {
+        return fail(400, 'confidence must be a number from 0 to 1.');
+      }
+      confidence = body.confidence;
+    }
+
+    let provenance: MemoryProvenance | undefined;
+    if (body.provenance === 'user_stated') {
+      provenance = { type: 'user' };
+    } else if (body.provenance !== undefined) {
+      if (
+        typeof body.provenance !== 'object' ||
+        body.provenance === null ||
+        Array.isArray(body.provenance)
+      ) {
+        return fail(400, 'provenance must be user_stated or an object.');
+      }
+      const raw = body.provenance as Record<string, unknown>;
+      const type = oneOf(raw.type, PROVENANCE_TYPES, 'provenance.type');
+      if (!type.ok) return fail(400, type.error);
+      let reference: string | undefined;
+      if (raw.reference !== undefined) {
+        const parsed = str(raw.reference, 'provenance.reference', { min: 1, max: 128 });
+        if (!parsed.ok) return fail(400, parsed.error);
+        if (!/^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/.test(parsed.value)) {
+          return fail(
+            400,
+            'provenance.reference must use printable ASCII without quotes or backslashes.',
+          );
+        }
+        const unsafe = secretReason(parsed.value);
+        if (unsafe) {
+          return fail(400, `Refusing to store provenance reference: ${unsafe}.`);
+        }
+        reference = parsed.value;
+      }
+      provenance = { type: type.value, ...(reference ? { reference } : {}) };
+    }
 
     const decision = await think(auth.userId, {
       content: content.value,
@@ -121,7 +210,12 @@ async function createMemory(request: Request) {
       title,
       projectId,
       supersedesId,
+      observedAt,
+      validFrom,
+      validTo,
+      temporalType,
       provenance,
+      confidence,
     });
 
     return Response.json(decision);

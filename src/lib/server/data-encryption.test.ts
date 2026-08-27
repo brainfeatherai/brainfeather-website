@@ -126,14 +126,20 @@ test('fits worst-case validated values in the documented columns', () => {
     field: 'title',
   });
   const memoryMetadata = encryptStoredValue(JSON.stringify({
-    version: 1,
-    metadata: JSON.stringify({
-      memoryType: 'correction',
-      confidence: 1,
-      provenance: 'user_stated',
-      intendedSupersedes: Array.from({ length: 25 }, () => 'a'.repeat(64)),
+    v: 2,
+    m: JSON.stringify({
+      v: 2,
+      mt: 'correction',
+      c: 1,
+      p: { t: 'commit', r: 'r'.repeat(128) },
+      is: Array.from({ length: 25 }, () => 'a'.repeat(64)),
+      oa: '2026-08-27T00:00:00.000Z',
+      vf: '2026-08-27T00:00:00.000Z',
+      vt: '2026-09-27T00:00:00.000Z',
+      ia: '2026-09-27T00:00:00.000Z',
+      tt: 'decision',
     }),
-    projectId: 'p'.repeat(64),
+    p: 'p'.repeat(64),
   }), {
     ...context,
     field: 'metadata',

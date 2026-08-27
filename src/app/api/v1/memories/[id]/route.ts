@@ -14,7 +14,7 @@ import { deleteMemory, syncMentionEdges, updateMemory } from '@/lib/server/memor
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { enrichMemory } from '@/lib/server/think';
-import { CATEGORIES, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
+import { CATEGORIES, dateTime, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
 
 async function updateMemoryRoute(
   request: Request,
@@ -32,6 +32,7 @@ async function updateMemoryRoute(
     category?: string;
     status?: 'active' | 'invalid';
     supersededBy?: string;
+    validTo?: string;
   } = {};
 
   if (body.content !== undefined) {
@@ -58,6 +59,11 @@ async function updateMemoryRoute(
     if (!parsed.ok) return fail(400, parsed.error);
     data.status = parsed.value;
     data.supersededBy = parsed.value === 'invalid' ? 'dashboard' : '';
+    if (parsed.value === 'invalid' && body.validTo !== undefined) {
+      const validTo = dateTime(body.validTo, 'validTo');
+      if (!validTo.ok) return fail(400, validTo.error);
+      data.validTo = validTo.value;
+    }
   }
 
   if (!Object.keys(data).length) {

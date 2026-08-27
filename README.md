@@ -138,6 +138,24 @@ Hit@1, Hit@3, negative-query abstention, and in-process latency. This small fixt
 is a release regression gate, not a substitute for LoCoMo, LongMemEval, BEAM, or a claim
 of benchmark parity with other memory systems.
 
+## Temporal memory and context budgets
+
+New memories carry compact encrypted temporal metadata: when Brainfeather observed the
+fact, when it was valid, its temporal type, confidence, and evidence provenance. The
+`referenceAt` query parameter on memory lists, search, and context returns facts valid at
+that point in time. Existing rows remain readable; legacy invalid rows without a reliable
+validity end fail closed in historical queries.
+
+`GET /api/v1/context` also accepts an optional `query` and `maxTokens` (256–12,000).
+The context compiler pins the top relevant memory, preserves facts/decisions/patterns
+diversity when budget allows, and never truncates individual memories.
+
+Historical reads use the validity interval recorded in encrypted metadata and all evidence
+currently known to Brainfeather. `observedAt` remains separate, so a fact learned later can
+still describe an earlier period without pretending Brainfeather knew it at that time.
+Future-effective plans are supported, but they cannot supersede a current fact until a
+scheduler exists; this prevents status and graph edges from changing before the fact is valid.
+
 ## Known gaps
 
 - **The legal pages are drafts.** Both carry a visible banner and highlighted

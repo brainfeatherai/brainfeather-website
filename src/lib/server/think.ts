@@ -22,6 +22,11 @@ import 'server-only';
    ──────────────────────────────────────────────────────────────── */
 
 import { extractEntities } from './entities';
+import {
+  mergeMemoryMetadata,
+  type MemoryProvenance,
+  type TemporalType,
+} from './memory-temporal';
 import { reportServerError } from './report-error';
 import {
   createMemory,
@@ -39,7 +44,12 @@ export type Candidate = {
   title?: string;
   projectId?: string;
   supersedesId?: string;
-  provenance?: 'user_stated';
+  observedAt?: string;
+  validFrom?: string;
+  validTo?: string;
+  temporalType?: TemporalType;
+  provenance?: MemoryProvenance;
+  confidence?: number;
 };
 
 export type Decision =
@@ -164,9 +174,10 @@ function metadataOf(memory: { metadata?: string }): {
 } {
   try {
     const value = JSON.parse(memory.metadata ?? '{}') as Record<string, unknown>;
+    const ids = value.intendedSupersedes ?? value.is;
     return {
-      intendedSupersedes: Array.isArray(value.intendedSupersedes)
-        ? value.intendedSupersedes.filter((id): id is string => typeof id === 'string')
+      intendedSupersedes: Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === 'string')
         : undefined,
     };
   } catch {
@@ -217,6 +228,12 @@ function detectType(content: string): MemoryType {
   if (PREFERENCE.test(content)) return 'preference';
   if (PATTERN.test(content)) return 'pattern';
   return 'fact';
+}
+
+function temporalTypeFor(type: MemoryType): TemporalType {
+  if (type === 'decision' || type === 'correction') return 'decision';
+  if (type === 'preference' || type === 'pattern') return 'preference';
+  return 'state';
 }
 
 /* ── Pipeline ───────────────────────────────────────────────────── */
@@ -351,14 +368,20 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   }
 
   // 5. Store.
+  const observedAt = cand.observedAt ?? new Date().toISOString();
+  const validFrom = cand.validFrom ?? observedAt;
   const created = await createMemory(userId, {
     ...cand,
     content,
-    metadata: JSON.stringify({
+    metadata: mergeMemoryMetadata(undefined, {
       memoryType: type,
-      confidence: cand.provenance === 'user_stated' ? 1 : 0.8,
-      provenance: cand.provenance ?? 'unspecified',
+      confidence: cand.confidence ?? (cand.provenance?.type === 'user' ? 1 : 0.8),
+      provenance: cand.provenance ?? { type: 'agent' },
       intendedSupersedes: [...doomed],
+      observedAt,
+      validFrom,
+      ...(cand.validTo ? { validTo: cand.validTo } : {}),
+      temporalType: cand.temporalType ?? temporalTypeFor(type),
     }),
     supersedeIds: [...doomed],
   });

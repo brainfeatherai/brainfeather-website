@@ -149,16 +149,25 @@ export const RELATED_WEIGHT = 0.35;
    1.00 — burying the better answer. */
 const RELATED_CEILING = 0.9;
 
-export function expand(query: string): ExpandedQuery {
-  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const MAX_QUERY_TERMS = 32;
 
-  const exact = new Set<string>();
-  for (const word of words) {
+/** Search tokens shared by lexical ranking and concept expansion. */
+export function searchTokens(text: string, limit = 2048): string[] {
+  const tokens: string[] = [];
+  for (const word of text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
     const term = normalize(word);
-    /* Length gate on top of the stop list: a stray "a" or "id" is noise,
-       but a listed short term like "ci" or "db" must survive. */
     if (STOP.has(term) || (term.length < 3 && !SIBLINGS.has(term))) continue;
+    tokens.push(term);
+    if (tokens.length >= limit) break;
+  }
+  return tokens;
+}
+
+export function expand(query: string): ExpandedQuery {
+  const exact = new Set<string>();
+  for (const term of searchTokens(query, MAX_QUERY_TERMS * 2)) {
     exact.add(term);
+    if (exact.size >= MAX_QUERY_TERMS) break;
   }
 
   const related = new Set<string>();
@@ -195,6 +204,25 @@ function mentions(haystack: string, term: string): boolean {
   }
 }
 
+function hitCounts(text: string, q: ExpandedQuery): {
+  exactHits: number;
+  relatedHits: number;
+} {
+  const haystack = text.toLowerCase();
+  let exactHits = 0;
+  for (const term of q.exact) if (mentions(haystack, term)) exactHits += 1;
+
+  let relatedRaw = 0;
+  for (const term of q.related) if (mentions(haystack, term)) relatedRaw += RELATED_WEIGHT;
+  return { exactHits, relatedHits: Math.min(relatedRaw, RELATED_CEILING) };
+}
+
+/** Independent bounded concept signal for hybrid rank fusion. */
+export function conceptRelatedScore(text: string, q: ExpandedQuery): number {
+  if (!q.exact.length || !q.related.length) return 0;
+  return hitCounts(text, q).relatedHits / RELATED_CEILING;
+}
+
 /* Relevance for one document against an expanded query.
 
    Normalised by exact-term count, so a two-word query and a five-word
@@ -202,19 +230,6 @@ function mentions(haystack: string, term: string): boolean {
    every result and the caller's threshold stops meaning anything. */
 export function score(text: string, q: ExpandedQuery): number {
   if (!q.exact.length) return 0;
-  const haystack = text.toLowerCase();
-
-  /* Counted once per TERM, not per occurrence: a document repeating one
-     word is not a better answer than one that covers several. */
-  let exactHits = 0;
-  for (const term of q.exact) if (mentions(haystack, term)) exactHits += 1;
-
-  let relatedRaw = 0;
-  for (const term of q.related) if (mentions(haystack, term)) relatedRaw += RELATED_WEIGHT;
-
-  /* Capped below the value of a single exact term, so no accumulation of
-     related vocabulary can bury a literal match. */
-  const relatedHits = Math.min(relatedRaw, RELATED_CEILING);
-
+  const { exactHits, relatedHits } = hitCounts(text, q);
   return (exactHits + relatedHits) / q.exact.length;
 }

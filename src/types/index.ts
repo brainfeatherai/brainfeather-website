@@ -33,7 +33,6 @@ export interface Memory {
   status?: 'active' | 'invalid';
   supersededBy?: string;
   projectId?: string;
-  embedding?: number[];
   metadata?: Record<string, unknown>;
 }
 

@@ -103,6 +103,24 @@ For key rotation, prepend the new key (`v2:<new>,v1:<old>`) and run the same acc
 migration. Remove `v1` only after no `bfe1.v1.` values remain. Rotating the blind-index
 key requires a separate coordinated index migration and must not be done in place.
 
+## Retrieval evaluation
+
+Encrypted memory search ranks tenant- and project-scoped candidates only after they are
+decrypted inside the server process. Ranking combines BM25 lexical relevance, curated
+related concepts, canonical entity overlap, and bounded recency. Queries and plaintext
+candidate text are not sent to an external search or embedding provider.
+
+Run the deterministic regression suite with:
+
+```bash
+npm run eval:retrieval
+```
+
+The report compares the previous concept-only ranker with the hybrid ranker using MRR,
+Hit@1, Hit@3, negative-query abstention, and in-process latency. This small fixture suite
+is a release regression gate, not a substitute for LoCoMo, LongMemEval, BEAM, or a claim
+of benchmark parity with other memory systems.
+
 ## Known gaps
 
 - **The legal pages are drafts.** Both carry a visible banner and highlighted

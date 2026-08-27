@@ -68,6 +68,58 @@ test('gives bounded recency more weight for explicitly current queries', () => {
   assert.equal(rankMemories(rows, 'current package manager convention', { limit: 1, asOfMs: NOW })[0]?.$id, 'new');
 });
 
+test('does not let broad old concept matches bury a recent current-state fact', () => {
+  const rows = [
+    memory(
+      'old-data',
+      'Data model details. Data tables use a data repository with normalized data.',
+      30,
+    ),
+    memory(
+      'recent-encryption',
+      'Production memory encryption uses a versioned keyring and encrypted mode.',
+      1,
+    ),
+    memory('old-mode', 'The editor runs in focused mode.', 25),
+  ];
+  assert.equal(
+    rankMemories(rows, 'current data encryption mode', { limit: 1, asOfMs: NOW })[0]?.$id,
+    'recent-encryption',
+  );
+});
+
+test('normalizes encryption inflections for lexical coverage', () => {
+  const rows = [
+    memory('unrelated', 'The project data model uses normalized tables.', 0),
+    memory('encrypted', 'Production memory fields are encrypted with a versioned keyring.', 30),
+  ];
+  assert.equal(
+    rankMemories(rows, 'encryption', { limit: 1, asOfMs: NOW })[0]?.$id,
+    'encrypted',
+  );
+});
+
+test('boosts concise titles without double-counting legacy title-body copies', () => {
+  const rows = [
+    memory(
+      'legacy-encryption',
+      'Memory encryption',
+      3,
+      'Memory encryption',
+    ),
+    memory(
+      'encryption-decision',
+      'Production memory fields use authenticated encryption and a versioned keyring.',
+      1,
+      'Production memory encryption',
+    ),
+  ];
+  assert.equal(
+    rankMemories(rows, 'current memory encryption', { limit: 1, asOfMs: NOW })[0]?.$id,
+    'encryption-decision',
+  );
+});
+
 test('never admits a newer irrelevant memory on recency alone', () => {
   const rows = [
     memory('relevant', 'Postgres stores production records.', 400),

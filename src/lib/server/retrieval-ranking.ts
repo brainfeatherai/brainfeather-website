@@ -10,8 +10,11 @@ export type RankableMemory = {
 
 const K1 = 1.2;
 const B = 0.75;
+const TITLE_WEIGHT = 2;
 const HALF_LIFE_MS = 90 * 24 * 60 * 60 * 1000;
+const CURRENT_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
 const TEMPORAL_QUERY = /\b(current|currently|latest|newest|recent|recently|now|today)\b/i;
+const TEMPORAL_TERMS = /\b(current|currently|latest|newest|recent|recently|now|today)\b/gi;
 
 function textOf(memory: RankableMemory): string {
   return `${memory.title ?? ''} ${memory.content}`;
@@ -53,6 +56,15 @@ function bm25Scores(tokenized: readonly string[][], queryTerms: readonly string[
   });
 }
 
+function exactCoverage(tokens: readonly string[], queryTerms: readonly string[]): number {
+  if (!queryTerms.length) return 0;
+  let matches = 0;
+  for (const term of queryTerms) {
+    if (tokens.some((token) => tokenMatches(token, term))) matches++;
+  }
+  return matches / queryTerms.length;
+}
+
 function entityKeys(text: string): Set<string> {
   return new Set(extractEntities(text).map(({ name, type }) => `${type}:${name}`));
 }
@@ -65,10 +77,10 @@ function entityOverlap(query: Set<string>, text: string): number {
   return matches / query.size;
 }
 
-function recency(createdAt: string, asOfMs: number): number {
+function recency(createdAt: string, asOfMs: number, halfLifeMs: number): number {
   const createdMs = Date.parse(createdAt);
   if (!Number.isFinite(createdMs)) return 0;
-  return 0.5 ** (Math.max(0, asOfMs - createdMs) / HALF_LIFE_MS);
+  return 0.5 ** (Math.max(0, asOfMs - createdMs) / halfLifeMs);
 }
 
 function newestFirst<T extends RankableMemory>(left: T, right: T): number {
@@ -88,45 +100,59 @@ export function rankMemories<T extends RankableMemory>(
   const limit = Math.max(0, Math.floor(options.limit));
   if (!limit || !memories.length) return [];
 
-  const expanded = expand(query);
-  const queryEntities = entityKeys(query);
+  const temporal = TEMPORAL_QUERY.test(query);
+  const relevanceQuery = temporal ? query.replace(TEMPORAL_TERMS, ' ') : query;
+  const expanded = expand(relevanceQuery);
+  const queryEntities = entityKeys(relevanceQuery);
   if (!expanded.exact.length && !queryEntities.size) {
     return [...memories].sort(newestFirst).slice(0, limit);
   }
 
   const texts = memories.map(textOf);
-  const tokenized = texts.map((text) => searchTokens(text));
-  const bm25 = bm25Scores(tokenized, expanded.exact);
+  const titleTokens = memories.map((memory) => searchTokens(memory.title ?? ''));
+  const contentTokens = memories.map((memory) =>
+    memory.title?.trim() === memory.content.trim() ? [] : searchTokens(memory.content),
+  );
+  const tokenized = titleTokens.map((title, index) => [...title, ...contentTokens[index]]);
+  const titleBm25 = bm25Scores(titleTokens, expanded.exact);
+  const contentBm25 = bm25Scores(contentTokens, expanded.exact);
+  const bm25 = titleBm25.map(
+    (titleScore, index) => titleScore * TITLE_WEIGHT + contentBm25[index],
+  );
   const maxBm25 = Math.max(...bm25, 0);
   const asOfMs = options.asOfMs ?? Date.now();
-  const temporal = TEMPORAL_QUERY.test(query);
   const weights = temporal
-    ? { lexical: 0.55, concept: 0.15, entity: 0.15, recency: 0.15 }
-    : { lexical: 0.6, concept: 0.2, entity: 0.15, recency: 0.05 };
+    ? { lexical: 0.25, coverage: 0.25, concept: 0.05, entity: 0.1, recency: 0.35 }
+    : { lexical: 0.55, coverage: 0.05, concept: 0.2, entity: 0.15, recency: 0.05 };
+  const halfLifeMs = temporal ? CURRENT_HALF_LIFE_MS : HALF_LIFE_MS;
 
   return memories
     .map((memory, index) => {
       const lexical = maxBm25 ? bm25[index] / maxBm25 : 0;
+      const coverage = exactCoverage(tokenized[index], expanded.exact);
       const concept = conceptRelatedScore(texts[index], expanded);
       const entity = entityOverlap(queryEntities, texts[index]);
       const eligible = bm25[index] > 0 || concept > 0 || entity > 0;
       return {
         memory,
         lexical,
+        coverage,
         concept,
         entity,
         eligible,
         combined:
           lexical * weights.lexical +
+          coverage * weights.coverage +
           concept * weights.concept +
           entity * weights.entity +
-          recency(memory.$createdAt, asOfMs) * weights.recency,
+          recency(memory.$createdAt, asOfMs, halfLifeMs) * weights.recency,
       };
     })
     .filter(({ eligible }) => eligible)
     .sort(
       (left, right) =>
         right.combined - left.combined ||
+        right.coverage - left.coverage ||
         right.lexical - left.lexical ||
         right.entity - left.entity ||
         newestFirst(left.memory, right.memory),

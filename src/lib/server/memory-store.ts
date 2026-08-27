@@ -16,7 +16,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { ID, Query } from 'node-appwrite';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
-import { expand, score } from './concepts';
+import { rankMemories } from './retrieval-ranking';
 import {
   blindIndex,
   dataEncryptionEnabled,
@@ -390,7 +390,7 @@ export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
   return rows.map(decryptedMemory);
 }
 
-/* Concept-expanded search over active facts.
+/* Hybrid retrieval over active, already-decrypted facts.
 
    Was plain substring matching, which failed the query that matters
    most: "how do we handle auth" scored ZERO against a stored fact
@@ -398,10 +398,9 @@ export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
    match, while the answer sat right there. That is the gap Mem0 and Zep
    close with embeddings.
 
-   ./concepts expands the query across a curated domain graph instead:
-   deterministic, no provider key, no per-query latency. See that module
-   for why a bounded vocabulary makes this viable, and where a vector
-   signal would fuse in later.
+   Ranking fuses BM25 lexical relevance, curated concept relations,
+   canonical entity overlap and bounded recency. It remains deterministic,
+   provider-free and in-process so plaintext never leaves the server.
 
    Deliberately NOT Query.search: full-text search needs a fulltext index
    on `content` and none exists, and without one Appwrite either errors
@@ -420,18 +419,7 @@ export async function search(
   const limit = opts.limit ?? 10;
   const pool = await listActive(userId, { ...opts, limit: 100 });
 
-  const expanded = expand(query);
-  /* A query of nothing but stop words expands to no terms. Returning the
-     newest facts beats returning an empty list — the caller asked for
-     something. */
-  if (!expanded.exact.length) return pool.slice(0, limit);
-
-  return pool
-    .map((doc) => ({ doc, s: score(`${doc.title ?? ''} ${doc.content}`, expanded) }))
-    .filter((r) => r.s > 0)
-    .sort((a, b) => b.s - a.s)
-    .slice(0, limit)
-    .map((r) => r.doc);
+  return rankMemories(pool, query, { limit });
 }
 
 export async function createMemory(

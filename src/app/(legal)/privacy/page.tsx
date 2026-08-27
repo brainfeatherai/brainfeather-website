@@ -111,7 +111,7 @@ export default function PrivacyPage() {
             rows={[
               [
                 "Memories",
-                "A title and body of text for each recorded fact, plus a category, tags, the client it came from, and a vector embedding used for search. The body is written from your sessions and can therefore include source code, file paths, architecture decisions, dependency choices and similar project detail.",
+                "A title and body of text for each recorded fact, plus a category, tags, the client it came from, and encrypted metadata used for project scoping and retrieval. Search ranks decrypted candidates in Brainfeather's server process using lexical, related-concept, entity and recency signals; it does not store or send vector embeddings. The body is written from your sessions and can therefore include source code, file paths, architecture decisions, dependency choices and similar project detail.",
               ],
               [
                 "Context rules",

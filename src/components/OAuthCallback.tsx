@@ -49,11 +49,22 @@ export default function OAuthCallback({
 
     authService
       .completeOAuth(userId, secret)
-      .then(() => {
+      .then(async () => {
+        const jwt = await authService.createJWT();
+        const access = await fetch('/api/public/session', {
+          headers: { Authorization: `Bearer ${jwt.jwt}` },
+          cache: 'no-store',
+        });
+        if (!access.ok) {
+          await authService.logout().catch(() => {});
+          window.location.replace('/login?error=access');
+          return;
+        }
         // Full document load — see note 1 above.
         window.location.replace("/overview");
       })
-      .catch(() => {
+      .catch(async () => {
+        await authService.logout().catch(() => {});
         window.location.replace("/login?error=oauth");
       });
   }, [userId, secret]);

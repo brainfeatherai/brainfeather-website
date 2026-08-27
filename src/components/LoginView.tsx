@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { authService } from "@/services/appwrite";
 
 const FIELD =
   "hairline h-11 w-full rounded-full border bg-paper px-5 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
@@ -63,15 +64,23 @@ function readableError(err: unknown): string {
   return raw || "Something went wrong. Try again.";
 }
 
-export default function LoginView({ inviteId }: { inviteId: string | null }) {
+export default function LoginView({
+  inviteId,
+  inviteEmail,
+  initialError,
+}: {
+  inviteId: string | null;
+  inviteEmail: string | null;
+  initialError: string | null;
+}) {
   const { user, loading, login, signup } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<"signin" | "signup">(inviteId ? "signup" : "signin");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(inviteEmail ?? "");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [pending, setPending] = useState(false);
 
   const isSignup = mode === "signup";
@@ -95,6 +104,18 @@ export default function LoginView({ inviteId }: { inviteId: string | null }) {
     } catch (err) {
       setError(readableError(err));
       setPending(false); // still mounted on failure, so re-enable
+    }
+  }
+
+  function continueWithGoogle() {
+    setError(null);
+    setPending(true);
+    try {
+      const redirect = authService.signInWithGoogle(window.location.origin);
+      if (typeof redirect === "string") window.location.assign(redirect);
+    } catch (err) {
+      setError(readableError(err));
+      setPending(false);
     }
   }
 
@@ -284,6 +305,31 @@ export default function LoginView({ inviteId }: { inviteId: string | null }) {
               {error ?? (isSignup ? "At least 8 characters." : "\u00A0")}
             </p>
           </form>
+
+          <div className="my-6 flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-forest/10" />
+            <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">or</span>
+            <span className="h-px flex-1 bg-forest/10" />
+          </div>
+
+          <button
+            type="button"
+            onClick={continueWithGoogle}
+            disabled={pending}
+            className="flex h-11 w-full items-center justify-center gap-3 rounded-full border border-forest/12 bg-paper text-[13px] font-semibold text-forest transition-colors hover:bg-paper-dim disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
+              <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.87h5.38a4.6 4.6 0 01-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.35z" />
+              <path fill="#34A853" d="M12 22c2.7 0 4.98-.9 6.63-2.42l-3.24-2.51c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.59A10 10 0 0012 22z" />
+              <path fill="#FBBC05" d="M6.39 13.9A6.02 6.02 0 016.08 12c0-.66.11-1.3.31-1.9V7.51H3.04A10 10 0 002 12c0 1.61.38 3.14 1.04 4.49l3.35-2.59z" />
+              <path fill="#EA4335" d="M12 5.97c1.47 0 2.79.51 3.83 1.5l2.87-2.88A9.64 9.64 0 0012 2a10 10 0 00-8.96 5.51l3.35 2.59C7.18 7.73 9.39 5.97 12 5.97z" />
+            </svg>
+            Continue with Google
+          </button>
+
+          <p className="mt-3 text-center text-[11px] leading-5 text-forest/42">
+            Use an approved Google account. Unapproved accounts cannot enter the console.
+          </p>
 
           {inviteId ? (
             <p className="mt-6 text-[13px] text-forest/60">

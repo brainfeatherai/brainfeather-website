@@ -30,6 +30,7 @@ import {
 } from "react";
 import type { Models } from "appwrite";
 import { authService } from "@/services/appwrite";
+import { normalizeWaitlistEmail } from "@/lib/waitlist-email-address";
 
 type SessionUser = Models.User<Models.Preferences>;
 
@@ -162,9 +163,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const signup = useCallback(
     async (email: string, password: string, name: string, inviteId: string) => {
       const generation = ++authGeneration.current;
-      await authService.createEmailPassword(email, password, name, inviteId);
+      const accountEmail = normalizeWaitlistEmail(email);
+      await authService.createEmailPassword(accountEmail, password, name, inviteId);
       // create() does not open a session; the caller must sign in.
-      await authService.createEmailSession(email, password);
+      await authService.createEmailSession(accountEmail, password);
       try {
         const current = await authService.getCurrentUser();
         if (generation !== authGeneration.current) return;

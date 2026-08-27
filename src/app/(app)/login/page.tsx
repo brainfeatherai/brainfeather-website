@@ -29,13 +29,28 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string | string[] }>;
+  searchParams: Promise<{
+    invite?: string | string[];
+    error?: string | string[];
+  }>;
 }) {
-  const { invite } = await searchParams;
+  const { invite, error } = await searchParams;
   const cookieInvite = (await cookies()).get(WAITLIST_COOKIE)?.value;
   const candidate = typeof invite === "string" ? invite : cookieInvite;
   const approved = candidate
     ? await approvedWaitlistRequest(candidate).catch(() => null)
     : null;
-  return <LoginView inviteId={approved?.$id ?? null} />;
+  const initialError =
+    error === 'access'
+      ? 'This Google account has not been approved for Brainfeather access.'
+      : error === 'oauth'
+        ? 'Google sign-in could not be completed. Try again.'
+        : null;
+  return (
+    <LoginView
+      inviteId={approved?.$id ?? null}
+      inviteEmail={approved?.email ?? null}
+      initialError={initialError}
+    />
+  );
 }

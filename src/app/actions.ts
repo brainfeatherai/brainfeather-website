@@ -1,6 +1,7 @@
 "use server";
 
 import { reportServerError } from "@/lib/server/report-error";
+import { normalizeWaitlistEmail } from "@/lib/waitlist-email-address";
 import { cookies } from "next/headers";
 import { after } from "next/server";
 
@@ -40,9 +41,8 @@ export async function joinWaitlist(
   _prev: WaitlistState,
   formData: FormData,
 ): Promise<WaitlistState> {
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
+  const rawEmail = String(formData.get("email") ?? "").trim();
+  const email = normalizeWaitlistEmail(rawEmail);
 
   /* Honeypot: a field hidden from people but happily filled by bots.
      Answer with the success copy rather than an error — telling a bot
@@ -51,13 +51,13 @@ export async function joinWaitlist(
     return { status: "ok", message: "You're on the list." };
   }
 
-  if (!email) {
+  if (!rawEmail) {
     return { status: "error", message: "Enter an email address." };
   }
-  if (email.length > 254) {
+  if (rawEmail.length > 254) {
     return { status: "error", message: "That address is too long." };
   }
-  if (!EMAIL.test(email)) {
+  if (!EMAIL.test(rawEmail) || !EMAIL.test(email)) {
     return { status: "error", message: "That doesn't look like an email address." };
   }
 
@@ -104,7 +104,7 @@ export async function joinWaitlist(
       after(async () => {
         try {
           const { sendWaitlistEmails } = await import("@/lib/server/waitlist-email");
-          await sendWaitlistEmails(email);
+          await sendWaitlistEmails(email, request.$id);
         } catch (error) {
           reportServerError(error, {
             operation: "waitlist.email",

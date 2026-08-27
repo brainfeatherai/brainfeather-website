@@ -1,5 +1,5 @@
 import { account, databases } from '@/lib/appwrite';
-import { ID, Query } from 'appwrite';
+import { ID, OAuthProvider, Query } from 'appwrite';
 import type { ContextRule, Team, TeamMember, Decision, Pattern } from '@/types';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
@@ -40,9 +40,16 @@ export const authService = {
     return await account.createJWT({ duration: 3600 });
   },
 
-  /* Kept only for OAuth callbacks already in flight. The invite-only UI
-     does not expose OAuth login, and the server access gate still rejects
-     sessions without an existing profile or approved waitlist email. */
+  signInWithGoogle(origin: string) {
+    return account.createOAuth2Token({
+      provider: OAuthProvider.Google,
+      success: `${origin}/auth/callback`,
+      failure: `${origin}/login?error=oauth`,
+    });
+  },
+
+  /* The server access gate rejects OAuth sessions whose email has not
+     been approved, so exposing Google here does not weaken invite-only access. */
   async completeOAuth(userId: string, secret: string) {
     return await account.createSession({ userId, secret });
   },

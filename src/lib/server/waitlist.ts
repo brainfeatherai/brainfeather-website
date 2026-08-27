@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { ID, Query, type Models } from 'node-appwrite';
+import { normalizeWaitlistEmail } from '../waitlist-email-address.ts';
 import { adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin';
 
 export const WAITLIST_COOKIE = 'brainfeather_waitlist';
@@ -36,10 +37,11 @@ export function isWaitlistId(value: string): boolean {
 }
 
 export async function findWaitlistRequest(email: string): Promise<WaitlistRow | null> {
+  const normalized = normalizeWaitlistEmail(email);
   const result = await adminTables.listRows<WaitlistApiRow>({
     databaseId: DATABASE_ID,
     tableId: COLLECTIONS.waitlist,
-    queries: [Query.equal('email', email.trim().toLowerCase()), Query.limit(1)],
+    queries: [Query.equal('email', normalized), Query.limit(1)],
     total: false,
     ttl: 0,
   });
@@ -65,7 +67,7 @@ export async function createWaitlistRequest(email: string): Promise<{
   request: WaitlistRow;
   created: boolean;
 }> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeWaitlistEmail(email);
   const existing = await findWaitlistRequest(normalized);
   if (existing) return { request: existing, created: false };
 
@@ -92,7 +94,7 @@ export async function createWaitlistRequest(email: string): Promise<{
 }
 
 export async function isApprovedEmail(email: string): Promise<boolean> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeWaitlistEmail(email);
   if (!normalized) return false;
   const result = await adminTables.listRows<WaitlistApiRow>({
     databaseId: DATABASE_ID,
@@ -114,14 +116,15 @@ export async function approvedWaitlistRequest(
 ): Promise<WaitlistRow | null> {
   const row = await getWaitlistRequest(rowId);
   if (!row || row.approved !== true) return null;
-  if (email && row.email !== email.trim().toLowerCase()) return null;
+  if (email && row.email !== normalizeWaitlistEmail(email)) return null;
   return row;
 }
 
 export async function deleteWaitlistRequests(email: string): Promise<void> {
+  const normalized = normalizeWaitlistEmail(email);
   await adminTables.deleteRows({
     databaseId: DATABASE_ID,
     tableId: COLLECTIONS.waitlist,
-    queries: [Query.equal('email', email.trim().toLowerCase())],
+    queries: [Query.equal('email', normalized)],
   });
 }

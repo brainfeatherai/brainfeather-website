@@ -63,6 +63,12 @@ New waitlist requests are saved before email delivery begins. A newly created re
 an owner notification to `getbrainfeather@gmail.com` and a branded confirmation to the
 applicant. Duplicate submissions do not resend either message.
 
+The owner notification contains a signed, expiring review link. Opening it only displays the
+request; approval requires a separate confirmation POST. Approval updates the Appwrite row and
+sends the applicant a direct `/login?invite=...` account link. Google sign-in remains
+invite-only because the callback verifies the authenticated email against the approved
+waitlist before allowing console access.
+
 Enable delivery by turning on two-step verification for `getbrainfeather@gmail.com`, creating
 a Google app password, and setting `GMAIL_APP_PASSWORD` in Vercel for Production, Preview, and
 Development. Use the 16-character app password, not the Gmail account password. Redeploy after

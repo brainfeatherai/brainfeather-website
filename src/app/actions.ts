@@ -1,12 +1,13 @@
 "use server";
 
 import { reportServerError } from "@/lib/server/report-error";
+import { cookies } from "next/headers";
 
 /* ────────────────────────────────────────────────────────────────
    Waitlist capture.
 
    Flow: form → this Server Action → a row in the Appwrite `waitlist`
-   collection.
+   table.
 
    Previously posted to a Google Apps Script webhook gated on
    WAITLIST_WEBHOOK_URL. That variable was never set in production, so
@@ -45,7 +46,7 @@ export async function joinWaitlist(
   /* Honeypot: a field hidden from people but happily filled by bots.
      Answer with the success copy rather than an error — telling a bot
      it was detected just teaches it to try again differently. */
-  if (String(formData.get("company") ?? "").length > 0) {
+  if (String(formData.get("website") ?? "").length > 0) {
     return { status: "ok", message: "You're on the list." };
   }
 
@@ -59,7 +60,7 @@ export async function joinWaitlist(
     return { status: "error", message: "That doesn't look like an email address." };
   }
 
-  /* Writes to the Appwrite `waitlist` collection.
+  /* Writes to the Appwrite `waitlist` table.
 
      Was a POST to a Google Apps Script webhook, gated on
      WAITLIST_WEBHOOK_URL. That variable was never set in production, so
@@ -80,46 +81,45 @@ export async function joinWaitlist(
      homepage down over a missing env var instead of just failing this
      one form. */
   try {
-    const { adminDb, DATABASE_ID, COLLECTIONS } = await import(
-      "@/lib/server/appwrite-admin"
+    const { createWaitlistRequest, WAITLIST_COOKIE } = await import(
+      "@/lib/server/waitlist"
     );
-    const { ID, Query } = await import("node-appwrite");
 
-    /* Idempotent on email. Without this a double-click, or someone
-       signing up twice weeks apart, produces duplicate rows — and the
-       count becomes something you cannot trust. Reports success either
-       way: from the visitor's side "you are on the list" is true. */
-    const existing = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.waitlist, [
-      Query.equal("email", email),
-      Query.limit(1),
-    ]);
-
-    if (existing.documents.length) {
-      return { status: "ok", message: "You're already on the list." };
-    }
-
-    /* No `company` written, despite the collection having the attribute
-       and the form having the field. That input is a HONEYPOT —
+    /* The hidden `website` input is a HONEYPOT, not user data.
        tabIndex={-1}, off-screen, invisible to humans — so a non-empty
        value means a bot, and the check above has already returned a fake
-       success and dropped it. By this line it is always empty. Persisting
-       it would imply we collect company data when we never receive any. */
-    await adminDb.createDocument(DATABASE_ID, COLLECTIONS.waitlist, ID.unique(), {
-      email,
-      source: String(formData.get("source") ?? "website").slice(0, 64),
-      submittedAt: new Date().toISOString(),
-      approved: false,
+       success and dropped it. By this line it is always empty. */
+    const request = await createWaitlistRequest(email);
+    const cookieStore = await cookies();
+    cookieStore.set(WAITLIST_COOKIE, request.$id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90,
     });
 
-    return { status: "ok", message: "You're on the list. We'll be in touch." };
+    return {
+      status: "ok",
+      message: request.approved
+        ? "Your access is approved. Create your account to continue."
+        : "You're on the list. We'll be in touch.",
+    };
   } catch (err) {
     /* Logged server-side with detail; the browser gets a sentence it can
        act on. Never surface the Appwrite error — it names collections and
        occasionally echoes configuration. */
+    const appwriteError = err as { code?: unknown; type?: unknown };
+    const code = typeof appwriteError.code === "number" ? appwriteError.code : undefined;
+    const type = typeof appwriteError.type === "string" ? appwriteError.type : undefined;
     reportServerError(err, {
       operation: "waitlist.submit",
       route: "/",
+      tags: { appwrite_code: code, appwrite_type: type },
     });
+    if (process.env.NODE_ENV !== "production") {
+      console.error(`[waitlist.submit] Appwrite code=${code ?? "unknown"} type=${type ?? "unknown"}`);
+    }
     return {
       status: "error",
       message: "Couldn't save that. Try again in a moment?",

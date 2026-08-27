@@ -1,5 +1,6 @@
 import { ID } from 'node-appwrite';
-import { adminDb, adminUsers, COLLECTIONS, DATABASE_ID } from '@/lib/server/appwrite-admin';
+import { adminUsers } from '@/lib/server/appwrite-admin';
+import { approvedWaitlistRequest } from '@/lib/server/waitlist';
 
 const EMAIL = /^[^\s@,;]+@[^\s@,;.]+(\.[^\s@,;.]+)+$/;
 const DENIED = 'This email is not currently eligible for Brainfeather access.';
@@ -23,13 +24,8 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid registration details.' }, { status: 400 });
   }
 
-  let invitation;
-  try {
-    invitation = await adminDb.getDocument(DATABASE_ID, COLLECTIONS.waitlist, inviteId);
-  } catch {
-    return Response.json({ error: DENIED }, { status: 403 });
-  }
-  if (invitation.email !== email || invitation.approved !== true) {
+  const invitation = await approvedWaitlistRequest(inviteId, email).catch(() => null);
+  if (!invitation) {
     return Response.json({ error: DENIED }, { status: 403 });
   }
 

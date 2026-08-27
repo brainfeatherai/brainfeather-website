@@ -15,7 +15,12 @@
    ──────────────────────────────────────────────────────────────── */
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import LoginView from "@/components/LoginView";
+import {
+  approvedWaitlistRequest,
+  WAITLIST_COOKIE,
+} from "@/lib/server/waitlist";
 
 export const metadata: Metadata = {
   title: "Console access",
@@ -27,5 +32,10 @@ export default async function LoginPage({
   searchParams: Promise<{ invite?: string | string[] }>;
 }) {
   const { invite } = await searchParams;
-  return <LoginView inviteId={typeof invite === "string" ? invite : null} />;
+  const cookieInvite = (await cookies()).get(WAITLIST_COOKIE)?.value;
+  const candidate = typeof invite === "string" ? invite : cookieInvite;
+  const approved = candidate
+    ? await approvedWaitlistRequest(candidate).catch(() => null)
+    : null;
+  return <LoginView inviteId={approved?.$id ?? null} />;
 }

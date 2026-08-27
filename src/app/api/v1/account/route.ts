@@ -7,6 +7,7 @@ import {
   COLLECTIONS,
   DATABASE_ID,
 } from '@/lib/server/appwrite-admin';
+import { deleteWaitlistRequests } from '@/lib/server/waitlist';
 
 async function deleteMatching(collectionId: string, attribute: string, value: string) {
   for (;;) {
@@ -100,7 +101,7 @@ export async function DELETE(request: Request) {
   await adminUsers.delete({ userId: auth.userId });
   await Promise.all([
     adminDb.deleteDocument(DATABASE_ID, COLLECTIONS.users, auth.userId).catch(() => {}),
-    deleteMatching(COLLECTIONS.waitlist, 'email', user.email.toLowerCase()),
+    deleteWaitlistRequests(user.email),
   ]);
   return Response.json({ deleted: true });
 }

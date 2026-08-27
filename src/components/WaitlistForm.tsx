@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { joinWaitlist, type WaitlistState } from "@/app/actions";
 import { mailto } from "@/lib/site";
 import Link from "next/link";
-import { useConsoleAccess } from "./PublicAccessLink";
+import { usePublicAccess } from "./PublicAccessLink";
 
 /* ────────────────────────────────────────────────────────────────
    Email capture for the closing section.
@@ -36,17 +36,26 @@ function DotRing() {
 
 export default function WaitlistForm() {
   const [state, action, pending] = useActionState(joinWaitlist, INITIAL);
-  const hasAccess = useConsoleAccess();
+  const access = usePublicAccess();
 
-  if (hasAccess) {
+  if (access === "console" || access === "approved") {
     return (
       <div className="mx-auto mt-8 max-w-[30rem] text-center">
         <Link
-          href="/overview"
+          href={access === "console" ? "/overview" : "/login"}
           className="inline-flex h-11 items-center rounded-lg bg-forest px-5 text-[11px] font-semibold uppercase tracking-[0.1em] text-paper transition-transform hover:scale-[1.02]"
         >
-          Go to Console →
+          {access === "console" ? "Go to Console →" : "Create your account →"}
         </Link>
+      </div>
+    );
+  }
+
+  if (access === "pending" && state.status !== "ok") {
+    return (
+      <div className="mx-auto mt-8 max-w-[30rem] rounded-full border border-forest/12 bg-paper-dim px-5 py-3 text-center">
+        <p className="text-[13px] font-medium text-forest">Your access request is pending.</p>
+        <p className="mt-1 text-[11px] text-forest/50">This page will show account setup after approval.</p>
       </div>
     );
   }
@@ -91,11 +100,9 @@ export default function WaitlistForm() {
             bots detect. tabIndex/-1 and aria-hidden keep it away from
             keyboards and screen readers. */}
         <div className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
-          <label htmlFor="waitlist-company">Company</label>
-          <input id="waitlist-company" name="company" type="text" tabIndex={-1} autoComplete="off" />
+          <label htmlFor="waitlist-website">Leave this field empty</label>
+          <input id="waitlist-website" name="website" type="text" tabIndex={-1} autoComplete="new-password" />
         </div>
-
-        <input type="hidden" name="source" value="website · closing CTA" />
 
         <button
           type="submit"

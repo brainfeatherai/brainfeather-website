@@ -57,6 +57,17 @@ in — a mismatch 404s every call. Bangalore is announced but not yet available;
 Singapore (`https://sgp.cloud.appwrite.io/v1`) is the closest live region to
 India.
 
+## Waitlist email notifications
+
+New waitlist requests are saved before email delivery begins. A newly created request sends
+an owner notification to `getbrainfeather@gmail.com` and a branded confirmation to the
+applicant. Duplicate submissions do not resend either message.
+
+Enable delivery by turning on two-step verification for `getbrainfeather@gmail.com`, creating
+a Google app password, and setting `GMAIL_APP_PASSWORD` in Vercel for Production, Preview, and
+Development. Use the 16-character app password, not the Gmail account password. Redeploy after
+adding or rotating it. SMTP failures are reported to Sentry and never discard the Appwrite row.
+
 ## API key storage rollout
 
 Editor keys are managed through JWT-authenticated server routes and can be stored as

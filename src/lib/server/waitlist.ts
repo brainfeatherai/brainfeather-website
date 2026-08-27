@@ -61,10 +61,13 @@ export async function getWaitlistRequest(rowId: string): Promise<WaitlistRow | n
   }
 }
 
-export async function createWaitlistRequest(email: string): Promise<WaitlistRow> {
+export async function createWaitlistRequest(email: string): Promise<{
+  request: WaitlistRow;
+  created: boolean;
+}> {
   const normalized = email.trim().toLowerCase();
   const existing = await findWaitlistRequest(normalized);
-  if (existing) return existing;
+  if (existing) return { request: existing, created: false };
 
   try {
     const row = await adminTables.createRow<WaitlistApiRow>({
@@ -76,13 +79,13 @@ export async function createWaitlistRequest(email: string): Promise<WaitlistRow>
       },
       permissions: [],
     });
-    return normalizedWaitlistRow(row);
+    return { request: normalizedWaitlistRow(row), created: true };
   } catch (error) {
     /* The unique email index can win a race between two submissions.
        In that case the request exists and should still report success. */
     if ((error as { code?: number }).code === 409) {
       const raced = await findWaitlistRequest(normalized);
-      if (raced) return raced;
+      if (raced) return { request: raced, created: false };
     }
     throw error;
   }

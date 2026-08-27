@@ -2,6 +2,7 @@
 
 import { reportServerError } from "@/lib/server/report-error";
 import { cookies } from "next/headers";
+import { after } from "next/server";
 
 /* ────────────────────────────────────────────────────────────────
    Waitlist capture.
@@ -89,7 +90,7 @@ export async function joinWaitlist(
        tabIndex={-1}, off-screen, invisible to humans — so a non-empty
        value means a bot, and the check above has already returned a fake
        success and dropped it. By this line it is always empty. */
-    const request = await createWaitlistRequest(email);
+    const { request, created } = await createWaitlistRequest(email);
     const cookieStore = await cookies();
     cookieStore.set(WAITLIST_COOKIE, request.$id, {
       httpOnly: true,
@@ -98,6 +99,23 @@ export async function joinWaitlist(
       path: "/",
       maxAge: 60 * 60 * 24 * 90,
     });
+
+    if (created) {
+      after(async () => {
+        try {
+          const { sendWaitlistEmails } = await import("@/lib/server/waitlist-email");
+          await sendWaitlistEmails(email);
+        } catch (error) {
+          reportServerError(error, {
+            operation: "waitlist.email",
+            route: "/",
+            tags: {
+              gmail_configured: Boolean(process.env.GMAIL_APP_PASSWORD),
+            },
+          });
+        }
+      });
+    }
 
     return {
       status: "ok",

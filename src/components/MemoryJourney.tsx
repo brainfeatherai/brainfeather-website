@@ -1,3 +1,4 @@
+import Image from "next/image";
 import BrandIcon, { type BrandId } from "./BrandIcons";
 import Reveal from "./Reveal";
 
@@ -116,10 +117,19 @@ function ContinuityVisual() {
       <div className="relative h-[300px] w-full max-w-[500px]">
         <div className="absolute left-1/2 top-5 h-[202px] w-[286px] -translate-x-1/2 rounded-2xl border border-emerald/18 bg-[#d8eadf] shadow-[0_24px_54px_-34px_rgba(13,38,32,.5)]">
           <div className="absolute -top-7 left-0 h-8 w-28 rounded-t-xl border border-b-0 border-emerald/18 bg-[#d8eadf]" />
+          <div className="absolute inset-x-3 -top-1 h-4 rounded-t-xl bg-paper/35 blur-[1px]" aria-hidden="true" />
           <div className="flex h-full flex-col p-5">
             <div className="flex items-center justify-between border-b border-forest/8 pb-3">
               <div className="flex items-center gap-2.5">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-forest text-[8px] font-semibold text-paper">BF</span>
+                <span className="grid h-9 w-9 place-items-center rounded-xl border border-forest/10 bg-paper/85 shadow-[0_8px_18px_-12px_rgba(13,38,32,.6)]">
+                  <Image
+                    src="/logo-black.png"
+                    alt=""
+                    width={24}
+                    height={24}
+                    className="h-6 w-6 object-contain"
+                  />
+                </span>
                 <div>
                   <p className="font-mono text-[7px] uppercase tracking-[0.13em] text-emerald">Living context</p>
                   <p className="mt-0.5 text-[11px] font-medium text-forest">One memory folder</p>
@@ -151,20 +161,20 @@ function ContinuityVisual() {
             <p className="font-mono text-[6px] uppercase tracking-[0.1em] text-forest/25">Session 1</p>
             <p className="mt-1 text-[8.5px] text-forest/52">context fills</p>
           </div>
-          <span className="text-emerald/35">→</span>
+          <span className="text-emerald/45">→</span>
           <div className="flex-1 text-center">
             <p className="font-mono text-[6px] uppercase tracking-[0.1em] text-forest/25">Compaction</p>
             <p className="mt-1 text-[8.5px] text-forest/52">chat shrinks</p>
           </div>
-          <span className="text-emerald/35">→</span>
+          <span className="text-emerald/45">→</span>
           <div className="flex-1 rounded-lg bg-mint/20 py-1.5 text-center">
             <p className="font-mono text-[6px] uppercase tracking-[0.1em] text-emerald/55">Session 2</p>
             <p className="mt-1 text-[8.5px] font-medium text-emerald">context restored</p>
           </div>
         </div>
 
-        <p className="absolute bottom-[54px] left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[6.5px] uppercase tracking-[0.12em] text-forest/25">
-          MCP keeps the folder current across every connected agent
+        <p className="absolute bottom-[84px] left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[6px] uppercase tracking-[0.11em] text-forest/30 sm:bottom-[80px]">
+          One living folder · current in every connected agent
         </p>
       </div>
     </div>

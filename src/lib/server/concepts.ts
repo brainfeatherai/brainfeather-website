@@ -74,6 +74,9 @@ const CLUSTERS: readonly (readonly string[])[] = [
   // errors
   ['error', 'errors', 'exception', 'failure', 'bug', 'crash', 'logging',
    'monitoring', 'observability', 'tracing', 'debug', 'retry', 'timeout'],
+  // security and encryption
+  ['security', 'secure', 'encrypt', 'cipher', 'ciphertext', 'cryptography',
+   'keyring', 'kms', 'secret', 'secrets'],
   // performance
   ['performance', 'latency', 'slow', 'speed', 'optimization', 'cache',
    'caching', 'memoize', 'throughput', 'scale', 'scaling'],
@@ -100,8 +103,16 @@ for (const cluster of CLUSTERS) {
    than stripping four suffixes. */
 const SUFFIXES = ['ing', 'ed', 'es', 's'];
 
+const FORMS = new Map<string, string>([
+  ['encrypted', 'encrypt'],
+  ['encrypting', 'encrypt'],
+  ['encryption', 'encrypt'],
+]);
+
 function normalize(word: string): string {
   const w = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const form = FORMS.get(w);
+  if (form) return form;
   if (SIBLINGS.has(w)) return w;
   for (const suffix of SUFFIXES) {
     if (w.length > suffix.length + 2 && w.endsWith(suffix)) {

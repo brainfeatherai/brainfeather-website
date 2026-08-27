@@ -12,6 +12,7 @@ const memories: RankableMemory[] = [
   { $id: 'package-old', $createdAt: new Date(NOW - 400 * DAY).toISOString(), content: 'The package manager convention is npm.' },
   { $id: 'package-new', $createdAt: new Date(NOW - 2 * DAY).toISOString(), content: 'The package manager convention is pnpm.' },
   { $id: 'database', $createdAt: new Date(NOW - 30 * DAY).toISOString(), content: 'Postgres is the production database.' },
+  { $id: 'encryption', $createdAt: new Date(NOW - DAY).toISOString(), content: 'Production memory encryption uses a versioned keyring and encrypted mode.' },
   { $id: 'ui', $createdAt: new Date(NOW - DAY).toISOString(), content: 'The interface uses Tailwind CSS.' },
 ];
 
@@ -21,6 +22,7 @@ const cases = [
   { query: 'where does production ship', expected: 'deploy' },
   { query: 'TS language', expected: 'typescript' },
   { query: 'current package manager convention', expected: 'package-new' },
+  { query: 'current data encryption mode', expected: 'encryption' },
   { query: 'Postgres database', expected: 'database' },
   { query: 'billing invoice policy', expected: null },
   { query: 'maintainer alice', expected: null },

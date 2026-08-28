@@ -21,13 +21,13 @@ import 'server-only';
    would trip a junk rule on its own.
    ──────────────────────────────────────────────────────────────── */
 
-import { extractEntities } from './entities';
+import { extractEntities } from './entities.ts';
 import {
   mergeMemoryMetadata,
   type MemoryProvenance,
   type TemporalType,
-} from './memory-temporal';
-import { reportServerError } from './report-error';
+} from './memory-temporal.ts';
+import { reportServerError } from './report-error.ts';
 import {
   createMemory,
   getMemory,
@@ -35,7 +35,7 @@ import {
   syncMentionEdges,
   supersede,
   upsertEntity,
-} from './memory-store';
+} from './memory-store.ts';
 
 export type Candidate = {
   content: string;
@@ -169,6 +169,110 @@ const PREFERENCE = /\b(prefer|like|love|hate|dislike|favorite|style|taste|person
 export type MemoryType = 'fact' | 'decision' | 'pattern' | 'correction' | 'preference';
 const MAX_SUPERSEDE_TARGETS = 25;
 
+export type StoredFact = {
+  $id: string;
+  content: string;
+  projectId?: string | null;
+};
+
+export function jaccardSimilarity(a: string, b: string): number {
+  return jaccard(tokens(a), tokens(b));
+}
+
+export function detectMemoryType(content: string): MemoryType {
+  return detectType(content);
+}
+
+export function findDuplicate(
+  content: string,
+  existing: readonly StoredFact[],
+  skipId?: string,
+): StoredFact | undefined {
+  const incoming = tokens(content);
+  for (const doc of existing) {
+    if (norm(doc.content) === norm(content)) return doc;
+  }
+  for (const doc of existing) {
+    if (doc.$id === skipId) continue;
+    if (jaccard(incoming, tokens(doc.content)) >= 0.55) return doc;
+  }
+  return undefined;
+}
+
+export function planSupersedes(
+  content: string,
+  existing: readonly StoredFact[],
+  opts: {
+    projectId?: string;
+    explicitTargetId?: string;
+    currentlyValid: boolean;
+  },
+): { doomed: string[]; type: MemoryType; reason: string } | { reject: string } {
+  const type = detectType(content);
+  const incoming = tokens(content);
+  const scope = opts.projectId ?? null;
+  const sameScope = (doc: StoredFact) => (doc.projectId ?? null) === scope;
+  const doomed = new Set<string>(
+    opts.currentlyValid && opts.explicitTargetId ? [opts.explicitTargetId] : [],
+  );
+
+  for (const doc of existing) {
+    if (!opts.currentlyValid) break;
+    if (!sameScope(doc)) continue;
+    const old = tokens(doc.content);
+    if (incoming.size <= old.size) continue;
+    let kept = 0;
+    for (const t of old) if (incoming.has(t)) kept++;
+    if (kept / old.size >= 0.85) doomed.add(doc.$id);
+  }
+
+  const label = labelOf(content);
+  if (opts.currentlyValid && label) {
+    for (const doc of existing) {
+      if (sameScope(doc) && labelOf(doc.content) === label) doomed.add(doc.$id);
+    }
+  }
+
+  if (opts.currentlyValid && (type === 'correction' || type === 'decision' || type === 'fact')) {
+    for (const doc of existing) {
+      if (!sameScope(doc)) continue;
+      const overlap = jaccard(incoming, tokens(doc.content));
+      if (overlap >= 0.5 && overlap < 0.9) doomed.add(doc.$id);
+    }
+  }
+
+  if (opts.currentlyValid && type === 'correction') {
+    const negatedEntities = new Set(
+      [...content.matchAll(/\bnot\s+([A-Za-z0-9_.+-]+)/gi)].flatMap((match) =>
+        extractEntities(match[1]).map((entity) => entity.name),
+      ),
+    );
+    for (const doc of existing) {
+      if (!sameScope(doc)) continue;
+      const oldEntities = extractEntities(doc.content);
+      if (oldEntities.some((entity) => negatedEntities.has(entity.name))) {
+        doomed.add(doc.$id);
+      }
+    }
+  }
+
+  if (doomed.size > MAX_SUPERSEDE_TARGETS) {
+    return {
+      reject: `correction matched more than ${MAX_SUPERSEDE_TARGETS} memories; use supersedesId for a precise correction`,
+    };
+  }
+
+  const reason = doomed.size
+    ? type === 'correction'
+      ? 'correction supersedes the original'
+      : label
+        ? `replaced older "${label}" facts`
+        : 'richer rewrite of an existing fact'
+    : `new ${type}`;
+
+  return { doomed: [...doomed], type, reason };
+}
+
 function metadataOf(memory: { metadata?: string }): {
   intendedSupersedes?: string[];
 } {
@@ -240,7 +344,6 @@ function temporalTypeFor(type: MemoryType): TemporalType {
 
 export async function think(userId: string, cand: Candidate): Promise<Decision> {
   const content = cand.content.replace(/\s+/g, ' ').trim();
-  const type = detectType(content);
   const nowMs = Date.now();
   const observedAt = cand.observedAt ?? new Date(nowMs).toISOString();
   const validFrom = cand.validFrom ?? observedAt;
@@ -266,36 +369,20 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
     limit: 100,
   });
 
-  const scope = cand.projectId ?? null;
-  const sameScope = (doc: { projectId?: string | null }) =>
-    (doc.projectId ?? null) === scope;
-
   // 1 + 2. Duplicates, before the junk filter (see header note).
-  const incoming = tokens(content);
   if (currentlyValid) {
-    for (const doc of existing) {
-      if (norm(doc.content) === norm(content)) {
-        if (cand.supersedesId === doc.$id) {
-          return { action: 'reject', reason: 'a memory cannot supersede itself' };
-        }
-        const intended = new Set(metadataOf(doc).intendedSupersedes ?? []);
-        if (cand.supersedesId) intended.add(cand.supersedesId);
-        if (intended.size) {
-          await finishSupersession(userId, doc.$id, [...intended], cand.projectId);
-        }
-        await enrichMemoryBestEffort(userId, doc.$id, doc.content);
-        return { action: 'duplicate', id: doc.$id };
+    const dup = findDuplicate(content, existing, cand.supersedesId);
+    if (dup) {
+      if (cand.supersedesId === dup.$id) {
+        return { action: 'reject', reason: 'a memory cannot supersede itself' };
       }
-    }
-    for (const doc of existing) {
-      if (doc.$id === cand.supersedesId) continue;
-      if (jaccard(incoming, tokens(doc.content)) >= 0.55) {
-        if (cand.supersedesId) {
-          await finishSupersession(userId, doc.$id, [cand.supersedesId], cand.projectId);
-        }
-        await enrichMemoryBestEffort(userId, doc.$id, doc.content);
-        return { action: 'duplicate', id: doc.$id };
+      const intended = new Set(metadataOf(dup).intendedSupersedes ?? []);
+      if (cand.supersedesId) intended.add(cand.supersedesId);
+      if (intended.size) {
+        await finishSupersession(userId, dup.$id, [...intended], cand.projectId);
       }
+      await enrichMemoryBestEffort(userId, dup.$id, dup.content);
+      return { action: 'duplicate', id: dup.$id };
     }
   }
 
@@ -317,71 +404,14 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   if (junk) return { action: 'reject', reason: junk };
 
   // 4. What does this replace?
-  const doomed = new Set<string>(currentlyValid && explicitTarget ? [explicitTarget.$id] : []);
+  const planned = planSupersedes(content, existing, {
+    projectId: cand.projectId,
+    explicitTargetId: currentlyValid ? explicitTarget?.$id : undefined,
+    currentlyValid,
+  });
+  if ('reject' in planned) return { action: 'reject', reason: planned.reject };
 
-  /* Supersede only WITHIN the incoming fact's own scope.
-
-     `?? null` because Appwrite returns null for an unset optional
-     attribute while an omitted argument is undefined; the two mean the
-     same thing here and must compare equal. */
-  /* Refinement: the new text restates an old fact and adds to it.
-     Containment, not similarity — a longer text that keeps 85% of the old
-     one's tokens is a rewrite of it. */
-  for (const doc of existing) {
-    if (!currentlyValid) break;
-    if (!sameScope(doc)) continue;
-    const old = tokens(doc.content);
-    if (incoming.size <= old.size) continue;
-    let kept = 0;
-    for (const t of old) if (incoming.has(t)) kept++;
-    if (kept / old.size >= 0.85) doomed.add(doc.$id);
-  }
-
-  /* Label collision: two facts both labelled "Backend:" cannot both
-     hold. The newer one wins. */
-  const label = labelOf(content);
-  if (currentlyValid && label) {
-    for (const doc of existing) {
-      if (sameScope(doc) && labelOf(doc.content) === label) doomed.add(doc.$id);
-    }
-  }
-
-  /* Contradiction: overlapping enough to be about the same subject, not
-     so overlapping as to be the same statement. Below 0.5 they are
-     unrelated; at 0.9+ the dedup pass above already caught it. */
-  if (currentlyValid && (type === 'correction' || type === 'decision' || type === 'fact')) {
-    for (const doc of existing) {
-      if (!sameScope(doc)) continue;
-      const overlap = jaccard(incoming, tokens(doc.content));
-      if (overlap >= 0.5 && overlap < 0.9) doomed.add(doc.$id);
-    }
-  }
-
-  /* A correction such as "Vitest, not Jest" may have low token overlap
-     with the old sentence. Only the explicitly negated technology is a
-     safe target; matching every entity would also retract an existing
-     true "we use Vitest" fact. */
-  if (currentlyValid && type === 'correction') {
-    const negatedEntities = new Set(
-      [...content.matchAll(/\bnot\s+([A-Za-z0-9_.+-]+)/gi)].flatMap((match) =>
-        extractEntities(match[1]).map((entity) => entity.name),
-      ),
-    );
-    for (const doc of existing) {
-      if (!sameScope(doc)) continue;
-      const oldEntities = extractEntities(doc.content);
-      if (oldEntities.some((entity) => negatedEntities.has(entity.name))) {
-        doomed.add(doc.$id);
-      }
-    }
-  }
-
-  if (doomed.size > MAX_SUPERSEDE_TARGETS) {
-    return {
-      action: 'reject',
-      reason: `correction matched more than ${MAX_SUPERSEDE_TARGETS} memories; use supersedesId for a precise correction`,
-    };
-  }
+  const { doomed, type, reason } = planned;
 
   // 5. Store.
   const created = await createMemory(userId, {
@@ -391,30 +421,22 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
       memoryType: type,
       confidence: cand.confidence ?? (cand.provenance?.type === 'user' ? 1 : 0.8),
       provenance: cand.provenance ?? { type: 'agent' },
-      intendedSupersedes: [...doomed],
+      intendedSupersedes: doomed,
       observedAt,
       validFrom,
       ...(cand.validTo ? { validTo: cand.validTo } : {}),
       temporalType: cand.temporalType ?? temporalTypeFor(type),
     }),
-    supersedeIds: [...doomed],
+    supersedeIds: doomed,
   });
 
   /* Enrichment remains best-effort: a graph failure must not roll back a
      fact that has already been accepted and stored. */
   if (currentlyValid) await enrichMemoryBestEffort(userId, created.$id, content);
 
-  const reason = doomed.size
-    ? type === 'correction'
-      ? 'correction supersedes the original'
-      : label
-        ? `replaced older "${label}" facts`
-        : 'richer rewrite of an existing fact'
-    : `new ${type}`;
-
-  if (doomed.size) {
-    await finishSupersession(userId, created.$id, [...doomed], cand.projectId);
+  if (doomed.length) {
+    await finishSupersession(userId, created.$id, doomed, cand.projectId);
   }
 
-  return { action: 'add', id: created.$id, invalidated: [...doomed], reason };
+  return { action: 'add', id: created.$id, invalidated: doomed, reason };
 }

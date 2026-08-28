@@ -19,7 +19,23 @@ import { compileContext } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
 import { memoryEvidence } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
+import {
+  decodeSession,
+  encodeSession,
+  markRecalled,
+  needsProactiveRecall,
+  startSession,
+} from '@/lib/server/session';
 import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
+import type { AgentSession } from '@/lib/server/session';
+
+function signedSession(session: AgentSession): { sessionToken?: string } {
+  try {
+    return { sessionToken: encodeSession(session) };
+  } catch {
+    return {};
+  }
+}
 
 async function getContext(request: Request) {
   const auth = await authenticate(request);
@@ -52,6 +68,17 @@ async function getContext(request: Request) {
   });
   if (!maxTokens.ok) return fail(400, maxTokens.error);
 
+  const rawSession =
+    params.get('sessionToken') ?? request.headers.get('x-brainfeather-session');
+  let session = rawSession ? decodeSession(rawSession, auth.userId) : null;
+  if (rawSession && !session) return fail(400, 'sessionToken is invalid.');
+  if (session?.projectId && session.projectId !== projectId) {
+    return fail(400, 'sessionToken belongs to a different project.');
+  }
+  if (!session) session = startSession(auth.userId, projectId);
+  const proactive = needsProactiveRecall(session);
+  session = markRecalled(session);
+
   /* Only active facts. A superseded decision reaching a prompt is the
      precise failure this product claims to prevent. */
   const all = await listActive(auth.userId, {
@@ -62,14 +89,17 @@ async function getContext(request: Request) {
   });
 
   if (query !== undefined || rawMaxTokens !== null) {
-    return Response.json(
-      compileContext(all, {
+    return Response.json({
+      ...compileContext(all, {
         query,
         maxTokens: maxTokens.value,
         asOfMs: referenceAtMs,
         includeEvidence,
       }),
-    );
+      session,
+      ...signedSession(session),
+      proactiveRecall: proactive,
+    });
   }
 
   const rows = (...categories: string[]) =>
@@ -101,6 +131,9 @@ async function getContext(request: Request) {
           },
         }
       : {}),
+    session,
+    ...signedSession(session),
+    proactiveRecall: proactive,
   });
 }
 

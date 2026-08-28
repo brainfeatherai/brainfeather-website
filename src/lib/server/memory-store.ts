@@ -15,14 +15,14 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 import { ID, Query } from 'node-appwrite';
-import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
-import { rankMemories } from './retrieval-ranking';
+import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin.ts';
+import { rankMemories } from './retrieval-ranking.ts';
 import {
   invalidateMemoryMetadata,
   memoryIsVisibleAt,
   normalizeMemoryMetadata,
   reviveMemoryMetadata,
-} from './memory-temporal';
+} from './memory-temporal.ts';
 import {
   blindIndex,
   dataEncryptionEnabled,
@@ -31,7 +31,7 @@ import {
   isEncryptedValue,
   lookupValues,
   needsDataEncryption,
-} from './data-encryption';
+} from './data-encryption.ts';
 
 type CollectionId = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
@@ -118,6 +118,25 @@ function entityContext(
   field: string,
 ) {
   return { userId, collection: COLLECTIONS.entities, documentId, field };
+}
+
+export function encodeMemoryDocument(
+  userId: string,
+  documentId: string,
+  fact: {
+    content: string;
+    category: string;
+    source?: string;
+    title?: string;
+    projectId?: string;
+    metadata?: string;
+  },
+) {
+  return storedMemoryData(userId, documentId, fact);
+}
+
+export function decodeMemoryDocument(row: MemoryDoc): MemoryDoc {
+  return decryptedMemory(row);
 }
 
 function storedMemoryData(
@@ -332,11 +351,15 @@ export async function migrateOwnedDataEncryption(userId: string): Promise<{
   return { memories: migratedMemories, entities: migratedEntities };
 }
 
-function edgeIdForMention(userId: string, memoryId: string, entityId: string): string {
+export function mentionEdgeId(userId: string, memoryId: string, entityId: string): string {
   return createHash('sha256')
     .update(`${userId}\0${memoryId}\0${entityId}\0mentioned_in`)
     .digest('hex')
     .slice(0, 36);
+}
+
+function edgeIdForMention(userId: string, memoryId: string, entityId: string): string {
+  return mentionEdgeId(userId, memoryId, entityId);
 }
 
 async function edgesForNode(userId: string, id: string): Promise<EdgeDoc[]> {

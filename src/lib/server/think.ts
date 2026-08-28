@@ -22,6 +22,11 @@ import 'server-only';
    ──────────────────────────────────────────────────────────────── */
 
 import { extractEntities } from './entities';
+import {
+  mergeMemoryMetadata,
+  type MemoryProvenance,
+  type TemporalType,
+} from './memory-temporal';
 import { reportServerError } from './report-error';
 import {
   createMemory,
@@ -39,7 +44,12 @@ export type Candidate = {
   title?: string;
   projectId?: string;
   supersedesId?: string;
-  provenance?: 'user_stated';
+  observedAt?: string;
+  validFrom?: string;
+  validTo?: string;
+  temporalType?: TemporalType;
+  provenance?: MemoryProvenance;
+  confidence?: number;
 };
 
 export type Decision =
@@ -164,9 +174,10 @@ function metadataOf(memory: { metadata?: string }): {
 } {
   try {
     const value = JSON.parse(memory.metadata ?? '{}') as Record<string, unknown>;
+    const ids = value.intendedSupersedes ?? value.is;
     return {
-      intendedSupersedes: Array.isArray(value.intendedSupersedes)
-        ? value.intendedSupersedes.filter((id): id is string => typeof id === 'string')
+      intendedSupersedes: Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === 'string')
         : undefined,
     };
   } catch {
@@ -219,11 +230,30 @@ function detectType(content: string): MemoryType {
   return 'fact';
 }
 
+function temporalTypeFor(type: MemoryType): TemporalType {
+  if (type === 'decision' || type === 'correction') return 'decision';
+  if (type === 'preference' || type === 'pattern') return 'preference';
+  return 'state';
+}
+
 /* ── Pipeline ───────────────────────────────────────────────────── */
 
 export async function think(userId: string, cand: Candidate): Promise<Decision> {
   const content = cand.content.replace(/\s+/g, ' ').trim();
   const type = detectType(content);
+  const nowMs = Date.now();
+  const observedAt = cand.observedAt ?? new Date(nowMs).toISOString();
+  const validFrom = cand.validFrom ?? observedAt;
+  const currentlyValid =
+    Date.parse(validFrom) <= nowMs &&
+    (cand.validTo === undefined || nowMs < Date.parse(cand.validTo));
+
+  if (!currentlyValid && cand.supersedesId) {
+    return {
+      action: 'reject',
+      reason: 'a historical memory cannot supersede current project truth',
+    };
+  }
 
   /* Compared against THIS project's facts, not every
      fact the user owns. Without the scope, saving "we use Postgres" in a
@@ -242,28 +272,30 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
 
   // 1 + 2. Duplicates, before the junk filter (see header note).
   const incoming = tokens(content);
-  for (const doc of existing) {
-    if (norm(doc.content) === norm(content)) {
-      if (cand.supersedesId === doc.$id) {
-        return { action: 'reject', reason: 'a memory cannot supersede itself' };
+  if (currentlyValid) {
+    for (const doc of existing) {
+      if (norm(doc.content) === norm(content)) {
+        if (cand.supersedesId === doc.$id) {
+          return { action: 'reject', reason: 'a memory cannot supersede itself' };
+        }
+        const intended = new Set(metadataOf(doc).intendedSupersedes ?? []);
+        if (cand.supersedesId) intended.add(cand.supersedesId);
+        if (intended.size) {
+          await finishSupersession(userId, doc.$id, [...intended], cand.projectId);
+        }
+        await enrichMemoryBestEffort(userId, doc.$id, doc.content);
+        return { action: 'duplicate', id: doc.$id };
       }
-      const intended = new Set(metadataOf(doc).intendedSupersedes ?? []);
-      if (cand.supersedesId) intended.add(cand.supersedesId);
-      if (intended.size) {
-        await finishSupersession(userId, doc.$id, [...intended], cand.projectId);
-      }
-      await enrichMemoryBestEffort(userId, doc.$id, doc.content);
-      return { action: 'duplicate', id: doc.$id };
     }
-  }
-  for (const doc of existing) {
-    if (doc.$id === cand.supersedesId) continue;
-    if (jaccard(incoming, tokens(doc.content)) >= 0.55) {
-      if (cand.supersedesId) {
-        await finishSupersession(userId, doc.$id, [cand.supersedesId], cand.projectId);
+    for (const doc of existing) {
+      if (doc.$id === cand.supersedesId) continue;
+      if (jaccard(incoming, tokens(doc.content)) >= 0.55) {
+        if (cand.supersedesId) {
+          await finishSupersession(userId, doc.$id, [cand.supersedesId], cand.projectId);
+        }
+        await enrichMemoryBestEffort(userId, doc.$id, doc.content);
+        return { action: 'duplicate', id: doc.$id };
       }
-      await enrichMemoryBestEffort(userId, doc.$id, doc.content);
-      return { action: 'duplicate', id: doc.$id };
     }
   }
 
@@ -285,7 +317,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   if (junk) return { action: 'reject', reason: junk };
 
   // 4. What does this replace?
-  const doomed = new Set<string>(explicitTarget ? [explicitTarget.$id] : []);
+  const doomed = new Set<string>(currentlyValid && explicitTarget ? [explicitTarget.$id] : []);
 
   /* Supersede only WITHIN the incoming fact's own scope.
 
@@ -296,6 +328,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
      Containment, not similarity — a longer text that keeps 85% of the old
      one's tokens is a rewrite of it. */
   for (const doc of existing) {
+    if (!currentlyValid) break;
     if (!sameScope(doc)) continue;
     const old = tokens(doc.content);
     if (incoming.size <= old.size) continue;
@@ -307,7 +340,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   /* Label collision: two facts both labelled "Backend:" cannot both
      hold. The newer one wins. */
   const label = labelOf(content);
-  if (label) {
+  if (currentlyValid && label) {
     for (const doc of existing) {
       if (sameScope(doc) && labelOf(doc.content) === label) doomed.add(doc.$id);
     }
@@ -316,7 +349,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   /* Contradiction: overlapping enough to be about the same subject, not
      so overlapping as to be the same statement. Below 0.5 they are
      unrelated; at 0.9+ the dedup pass above already caught it. */
-  if (type === 'correction' || type === 'decision' || type === 'fact') {
+  if (currentlyValid && (type === 'correction' || type === 'decision' || type === 'fact')) {
     for (const doc of existing) {
       if (!sameScope(doc)) continue;
       const overlap = jaccard(incoming, tokens(doc.content));
@@ -328,7 +361,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
      with the old sentence. Only the explicitly negated technology is a
      safe target; matching every entity would also retract an existing
      true "we use Vitest" fact. */
-  if (type === 'correction') {
+  if (currentlyValid && type === 'correction') {
     const negatedEntities = new Set(
       [...content.matchAll(/\bnot\s+([A-Za-z0-9_.+-]+)/gi)].flatMap((match) =>
         extractEntities(match[1]).map((entity) => entity.name),
@@ -354,18 +387,22 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   const created = await createMemory(userId, {
     ...cand,
     content,
-    metadata: JSON.stringify({
+    metadata: mergeMemoryMetadata(undefined, {
       memoryType: type,
-      confidence: cand.provenance === 'user_stated' ? 1 : 0.8,
-      provenance: cand.provenance ?? 'unspecified',
+      confidence: cand.confidence ?? (cand.provenance?.type === 'user' ? 1 : 0.8),
+      provenance: cand.provenance ?? { type: 'agent' },
       intendedSupersedes: [...doomed],
+      observedAt,
+      validFrom,
+      ...(cand.validTo ? { validTo: cand.validTo } : {}),
+      temporalType: cand.temporalType ?? temporalTypeFor(type),
     }),
     supersedeIds: [...doomed],
   });
 
   /* Enrichment remains best-effort: a graph failure must not roll back a
      fact that has already been accepted and stored. */
-  await enrichMemoryBestEffort(userId, created.$id, content);
+  if (currentlyValid) await enrichMemoryBestEffort(userId, created.$id, content);
 
   const reason = doomed.size
     ? type === 'correction'

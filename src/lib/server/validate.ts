@@ -79,6 +79,43 @@ export function strictScopeOf(params: URLSearchParams): boolean {
   return params.get('strictScope') === 'true';
 }
 
+export function dateTime(
+  value: unknown,
+  field: string,
+): { ok: true; value: string; ms: number } | { ok: false; error: string } {
+  if (typeof value !== 'string' || value.length > 64) {
+    return { ok: false, error: `${field} must be an ISO 8601 date-time.` };
+  }
+  const trimmed = value.trim();
+  if (
+    !/^\d{4}-\d{2}-\d{2}T/.test(trimmed) ||
+    !/(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed)
+  ) {
+    return { ok: false, error: `${field} must include a date, time and timezone.` };
+  }
+  const ms = Date.parse(trimmed);
+  if (!Number.isFinite(ms)) {
+    return { ok: false, error: `${field} must be a valid ISO 8601 date-time.` };
+  }
+  return { ok: true, value: new Date(ms).toISOString(), ms };
+}
+
+export function boundedInt(
+  value: string | null,
+  field: string,
+  opts: { min: number; max: number; fallback: number },
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (value === null || value === '') return { ok: true, value: opts.fallback };
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < opts.min || parsed > opts.max) {
+    return {
+      ok: false,
+      error: `${field} must be an integer from ${opts.min} to ${opts.max}.`,
+    };
+  }
+  return { ok: true, value: parsed };
+}
+
 /** Parse a JSON body, returning null rather than throwing on garbage. */
 export async function readJson(request: Request): Promise<Record<string, unknown> | null> {
   try {

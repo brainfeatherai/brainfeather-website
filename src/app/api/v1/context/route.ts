@@ -15,9 +15,10 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { authenticate, fail } from '@/lib/server/api-auth';
+import { compileContext } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { strictScopeOf } from '@/lib/server/validate';
+import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
 
 async function getContext(request: Request) {
   const auth = await authenticate(request);
@@ -27,10 +28,46 @@ async function getContext(request: Request) {
   const projectId = params.get('projectId') ?? undefined;
   const strictScope = strictScopeOf(params);
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
+  let query: string | undefined;
+  const rawQuery = params.get('query');
+  if (rawQuery !== null) {
+    const parsed = str(rawQuery, 'query', { min: 1, max: 200 });
+    if (!parsed.ok) return fail(400, parsed.error);
+    query = parsed.value;
+  }
+  let referenceAtMs: number | undefined;
+  const rawReferenceAt = params.get('referenceAt');
+  if (rawReferenceAt) {
+    const parsed = dateTime(rawReferenceAt, 'referenceAt');
+    if (!parsed.ok) return fail(400, parsed.error);
+    referenceAtMs = parsed.ms;
+  }
+  const rawMaxTokens = params.get('maxTokens');
+  const maxTokens = boundedInt(rawMaxTokens, 'maxTokens', {
+    min: 256,
+    max: 12_000,
+    fallback: 4_000,
+  });
+  if (!maxTokens.ok) return fail(400, maxTokens.error);
 
   /* Only active facts. A superseded decision reaching a prompt is the
      precise failure this product claims to prevent. */
-  const all = await listActive(auth.userId, { projectId, strictScope, limit: 100 });
+  const all = await listActive(auth.userId, {
+    projectId,
+    strictScope,
+    limit: 100,
+    referenceAtMs,
+  });
+
+  if (query !== undefined || rawMaxTokens !== null) {
+    return Response.json(
+      compileContext(all, {
+        query,
+        maxTokens: maxTokens.value,
+        asOfMs: referenceAtMs,
+      }),
+    );
+  }
 
   const pick = (...categories: string[]) =>
     all.filter((m) => categories.includes(m.category)).map((m) => m.content);

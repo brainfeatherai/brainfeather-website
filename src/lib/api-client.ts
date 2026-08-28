@@ -45,6 +45,15 @@ export type Fact = {
   category: string;
   status: "active" | "invalid";
   projectId?: string;
+  temporal?: {
+    observedAt: string;
+    validFrom: string;
+    validTo?: string;
+    invalidatedAt?: string;
+    temporalType: "state" | "event" | "plan" | "preference" | "decision" | "absence";
+    confidence: number;
+    provenance: { type: string; reference?: string };
+  };
 };
 
 export type EntityRow = {

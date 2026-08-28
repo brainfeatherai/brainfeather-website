@@ -373,6 +373,7 @@ export async function listActive(
     Query.orderDesc('$createdAt'),
     Query.limit(retrievalWindow),
   ];
+  if (opts.referenceAtMs === undefined) queries.push(Query.equal('status', 'active'));
   if (opts.category) queries.push(Query.equal('category', opts.category));
 
   /* Compatibility read = this project's facts PLUS unscoped ones.
@@ -417,6 +418,7 @@ export async function listActive(
 export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
   const rows = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
+    Query.equal('status', 'active'),
     Query.orderDesc('$createdAt'),
   ]);
   const now = Date.now();
@@ -838,6 +840,7 @@ async function projectGraphScope(
 ): Promise<{ memoryIds: Set<string>; entityIds: Set<string> }> {
   const storedMemories = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
+    Query.equal('status', 'active'),
     Query.equal(
       'projectId',
       lookupValues(projectId, userId, 'memory.projectId'),

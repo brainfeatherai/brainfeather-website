@@ -62,6 +62,12 @@ async function updateMemoryRoute(
     if (parsed.value === 'invalid' && body.validTo !== undefined) {
       const validTo = dateTime(body.validTo, 'validTo');
       if (!validTo.ok) return fail(400, validTo.error);
+      if (validTo.ms > Date.now() + 5 * 60 * 1000) {
+        return fail(
+          400,
+          'validTo cannot be in the future until scheduled retraction is supported.',
+        );
+      }
       data.validTo = validTo.value;
     }
   }

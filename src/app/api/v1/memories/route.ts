@@ -110,6 +110,12 @@ async function createMemory(request: Request) {
     if (body.projectId !== undefined) {
       const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });
       if (!parsed.ok) return fail(400, parsed.error);
+      if (!/^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/.test(parsed.value)) {
+        return fail(
+          400,
+          'projectId must use printable ASCII without quotes or backslashes.',
+        );
+      }
       projectId = parsed.value;
     }
 
@@ -134,6 +140,12 @@ async function createMemory(request: Request) {
     if (body.validFrom !== undefined) {
       const parsed = dateTime(body.validFrom, 'validFrom');
       if (!parsed.ok) return fail(400, parsed.error);
+      if (parsed.ms > Date.now() + 5 * 60 * 1000) {
+        return fail(
+          400,
+          'validFrom cannot be in the future until scheduled activation is supported.',
+        );
+      }
       validFrom = parsed.value;
     }
 

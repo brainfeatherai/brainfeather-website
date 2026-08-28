@@ -153,8 +153,9 @@ diversity when budget allows, and never truncates individual memories.
 Historical reads use the validity interval recorded in encrypted metadata and all evidence
 currently known to Brainfeather. `observedAt` remains separate, so a fact learned later can
 still describe an earlier period without pretending Brainfeather knew it at that time.
-Future-effective plans are supported, but they cannot supersede a current fact until a
-scheduler exists; this prevents status and graph edges from changing before the fact is valid.
+Historical evidence can be stored and recalled without invalidating or enriching current
+project truth. Future-effective activation is rejected until a scheduler exists; this
+prevents status and graph edges from changing before the fact is valid.
 
 ## Known gaps
 

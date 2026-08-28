@@ -1,4 +1,5 @@
 import { rankMemories } from './retrieval-ranking.ts';
+import { memoryEvidence, type MemoryEvidence } from './memory-temporal.ts';
 
 export type ContextMemory = {
   $id: string;
@@ -6,6 +7,7 @@ export type ContextMemory = {
   title?: string;
   content: string;
   category: string;
+  metadata?: string;
 };
 
 type Group = 'facts' | 'decisions' | 'patterns';
@@ -15,6 +17,11 @@ export type CompiledContext = {
   decisions: string[];
   patterns: string[];
   counts: { facts: number; decisions: number; patterns: number; total: number };
+  evidence?: {
+    facts: (MemoryEvidence | null)[];
+    decisions: (MemoryEvidence | null)[];
+    patterns: (MemoryEvidence | null)[];
+  };
 };
 
 function groupOf(category: string): Group | null {
@@ -30,7 +37,7 @@ export function estimateTokens(text: string): number {
 
 export function compileContext<T extends ContextMemory>(
   memories: readonly T[],
-  options: { query?: string; maxTokens: number; asOfMs?: number },
+  options: { query?: string; maxTokens: number; asOfMs?: number; includeEvidence?: boolean },
 ): CompiledContext {
   const grouped = memories.filter((memory) => groupOf(memory.category) !== null);
   const relevant = rankMemories(grouped, options.query ?? '', {
@@ -84,5 +91,20 @@ export function compileContext<T extends ContextMemory>(
       patterns: patterns.length,
       total: selected.length,
     },
+    ...(options.includeEvidence
+      ? {
+          evidence: {
+            facts: selected
+              .filter((memory) => groupOf(memory.category) === 'facts')
+              .map((memory) => memoryEvidence(memory.metadata) ?? null),
+            decisions: selected
+              .filter((memory) => groupOf(memory.category) === 'decisions')
+              .map((memory) => memoryEvidence(memory.metadata) ?? null),
+            patterns: selected
+              .filter((memory) => groupOf(memory.category) === 'patterns')
+              .map((memory) => memoryEvidence(memory.metadata) ?? null),
+          },
+        }
+      : {}),
   };
 }

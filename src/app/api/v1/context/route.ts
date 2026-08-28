@@ -17,6 +17,7 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { compileContext } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
+import { memoryEvidence } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
 
@@ -25,6 +26,7 @@ async function getContext(request: Request) {
   if (!auth.ok) return fail(auth.status, auth.error);
 
   const params = new URL(request.url).searchParams;
+  const includeEvidence = params.get('includeEvidence') === 'true';
   const projectId = params.get('projectId') ?? undefined;
   const strictScope = strictScopeOf(params);
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
@@ -65,16 +67,20 @@ async function getContext(request: Request) {
         query,
         maxTokens: maxTokens.value,
         asOfMs: referenceAtMs,
+        includeEvidence,
       }),
     );
   }
 
-  const pick = (...categories: string[]) =>
-    all.filter((m) => categories.includes(m.category)).map((m) => m.content);
+  const rows = (...categories: string[]) =>
+    all.filter((m) => categories.includes(m.category));
+  const factRows = rows('context', 'project');
+  const decisionRows = rows('decision');
+  const patternRows = rows('code', 'preference');
 
-  const facts = pick('context', 'project');
-  const decisions = pick('decision');
-  const patterns = pick('code', 'preference');
+  const facts = factRows.map((memory) => memory.content);
+  const decisions = decisionRows.map((memory) => memory.content);
+  const patterns = patternRows.map((memory) => memory.content);
 
   return Response.json({
     facts,
@@ -86,6 +92,15 @@ async function getContext(request: Request) {
       patterns: patterns.length,
       total: all.length,
     },
+    ...(includeEvidence
+      ? {
+          evidence: {
+            facts: factRows.map((memory) => memoryEvidence(memory.metadata) ?? null),
+            decisions: decisionRows.map((memory) => memoryEvidence(memory.metadata) ?? null),
+            patterns: patternRows.map((memory) => memoryEvidence(memory.metadata) ?? null),
+          },
+        }
+      : {}),
   });
 }
 

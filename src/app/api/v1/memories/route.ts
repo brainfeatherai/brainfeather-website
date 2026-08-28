@@ -14,6 +14,8 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { listActive } from '@/lib/server/memory-store';
 import {
+  isFileEvidenceDigest,
+  metadataWithoutEvidenceDigest,
   PROVENANCE_TYPES,
   TEMPORAL_TYPES,
   type MemoryProvenance,
@@ -63,7 +65,13 @@ async function listMemories(request: Request) {
     referenceAtMs,
   });
 
-  return Response.json({ memories, count: memories.length });
+  return Response.json({
+    memories: memories.map((memory) => ({
+      ...memory,
+      metadata: metadataWithoutEvidenceDigest(memory.metadata),
+    })),
+    count: memories.length,
+  });
 }
 
 async function createMemory(request: Request) {
@@ -212,7 +220,21 @@ async function createMemory(request: Request) {
         }
         reference = parsed.value;
       }
-      provenance = { type: type.value, ...(reference ? { reference } : {}) };
+      let digest: string | undefined;
+      if (raw.digest !== undefined) {
+        if (type.value !== 'file') {
+          return fail(400, 'provenance.digest is only supported for file evidence.');
+        }
+        if (!isFileEvidenceDigest(raw.digest)) {
+          return fail(400, 'provenance.digest must be sha256 followed by 64 lowercase hex characters.');
+        }
+        digest = raw.digest;
+      }
+      provenance = {
+        type: type.value,
+        ...(reference ? { reference } : {}),
+        ...(digest ? { digest } : {}),
+      };
     }
 
     const decision = await think(auth.userId, {

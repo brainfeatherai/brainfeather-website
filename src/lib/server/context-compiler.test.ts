@@ -86,3 +86,35 @@ test('preserves existing context semantics by excluding team-only memories', () 
   assert.deepEqual(context.facts, [rows[1].content]);
   assert.equal(context.counts.total, 1);
 });
+
+test('returns evidence arrays aligned with selected context only when requested', () => {
+  const rows = [
+    {
+      ...memory('fact', 'project', 'Architecture is documented.', 1),
+      metadata: JSON.stringify({
+        p: {
+          t: 'file',
+          r: 'docs/architecture.md',
+          d: `sha256:${'b'.repeat(64)}`,
+        },
+      }),
+    },
+    memory('decision', 'decision', 'Use Postgres.', 0),
+  ];
+  const compatible = compileContext(rows, { maxTokens: 500, asOfMs: NOW });
+  assert.equal('evidence' in compatible, false);
+
+  const context = compileContext(rows, {
+    maxTokens: 500,
+    asOfMs: NOW,
+    includeEvidence: true,
+  });
+  assert.equal(context.evidence?.facts.length, context.facts.length);
+  assert.deepEqual(context.evidence?.facts[0], {
+    type: 'file',
+    reference: 'docs/architecture.md',
+    digest: `sha256:${'b'.repeat(64)}`,
+  });
+  assert.equal(context.evidence?.decisions.length, context.decisions.length);
+  assert.equal(context.evidence?.decisions[0], null);
+});

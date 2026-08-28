@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   invalidateMemoryMetadata,
+  isFileEvidenceDigest,
   isValidAt,
   memoryIsVisibleAt,
+  memoryEvidence,
+  metadataWithoutEvidenceDigest,
   mergeMemoryMetadata,
   normalizeMemoryMetadata,
   reviveMemoryMetadata,
@@ -136,4 +139,52 @@ test('normalizes compact provenance and temporal keys', () => {
     provenance: { type: 'commit', reference: 'abc123' },
     intendedSupersedes: ['memory-1'],
   });
+});
+
+test('stores file digests compactly without exposing them in temporal provenance', () => {
+  const raw = mergeMemoryMetadata(undefined, {
+    provenance: {
+      type: 'file',
+      reference: 'docs/architecture.md',
+      digest: `sha256:${'a'.repeat(64)}`,
+    },
+  });
+  const compact = JSON.parse(raw);
+  assert.equal(compact.p.d, `sha256:${'a'.repeat(64)}`);
+  assert.deepEqual(normalizeMemoryMetadata(raw, CREATED).provenance, {
+    type: 'file',
+    reference: 'docs/architecture.md',
+  });
+  assert.deepEqual(memoryEvidence(raw), {
+    type: 'file',
+    reference: 'docs/architecture.md',
+    digest: `sha256:${'a'.repeat(64)}`,
+  });
+  assert.deepEqual(JSON.parse(metadataWithoutEvidenceDigest(raw)!), {
+    v: 2,
+    p: { t: 'file', r: 'docs/architecture.md' },
+  });
+});
+
+test('does not rewrite metadata that has no evidence digest', () => {
+  const raw = JSON.stringify({ v: 2, p: { t: 'commit', r: 'abc123' } });
+  assert.equal(metadataWithoutEvidenceDigest(raw), raw);
+});
+
+test('accepts only canonical lowercase SHA-256 evidence digests', () => {
+  assert.equal(isFileEvidenceDigest(`sha256:${'a'.repeat(64)}`), true);
+  assert.equal(isFileEvidenceDigest(`sha256:${'A'.repeat(64)}`), false);
+  assert.equal(isFileEvidenceDigest(`sha1:${'a'.repeat(64)}`), false);
+  assert.equal(isFileEvidenceDigest(`sha256:${'a'.repeat(63)}`), false);
+});
+
+test('omits malformed or non-file digests from recalled evidence', () => {
+  assert.deepEqual(
+    memoryEvidence(JSON.stringify({ p: { t: 'file', r: 'README.md', d: 'bad' } })),
+    { type: 'file', reference: 'README.md' },
+  );
+  assert.deepEqual(
+    memoryEvidence(JSON.stringify({ p: { t: 'commit', r: 'abc123', d: `sha256:${'a'.repeat(64)}` } })),
+    { type: 'commit', reference: 'abc123' },
+  );
 });

@@ -14,15 +14,17 @@ export interface Memory {
   $createdAt: string;
   $updatedAt: string;
   userId: string;
-  /* Mirrors the deployed `memories.source` enum in Appwrite. Unknown MCP
-     clients map to `manual` until the live schema is expanded. */
+  /* Mirrors `SOURCES` and the deployed `memories.source` enum in Appwrite. */
   source:
     | 'manual'
     | 'chatgpt'
     | 'claude'
     | 'cursor'
     | 'slack'
-    | 'chrome';
+    | 'chrome'
+    | 'opencode'
+    | 'codex'
+    | 'antigravity';
   title: string;
   content: string;
   category: 'preference' | 'context' | 'decision' | 'code' | 'project' | 'team';

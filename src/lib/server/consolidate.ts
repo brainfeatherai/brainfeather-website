@@ -125,16 +125,29 @@ export async function consolidateProjectMemories(
       continue;
     }
 
-    decisions.push(
-      await think(userId, {
+    const first = await think(userId, {
         content: cluster.mergedContent,
         category: cluster.category,
         projectId: opts.projectId,
         supersedesId: rest[0],
         provenance: { type: 'agent', reference: `consolidate:${newest}` },
         confidence: 0.85,
-      }),
-    );
+      });
+    decisions.push(first);
+    if (first.action === 'reject') continue;
+
+    for (const id of rest.slice(1)) {
+      decisions.push(
+        await think(userId, {
+          content: cluster.mergedContent,
+          category: cluster.category,
+          projectId: opts.projectId,
+          supersedesId: id,
+          provenance: { type: 'agent', reference: `consolidate:${newest}` },
+          confidence: 0.85,
+        }),
+      );
+    }
   }
 
   return { clusters, decisions };

@@ -18,7 +18,7 @@ async function consolidateMemories(request: Request) {
   const dryRun = body.dryRun === true;
   const result = await consolidateProjectMemories(auth.userId, { projectId, dryRun });
   return Response.json({
-    clusters: result.clusters.length,
+    clusterCount: result.clusters.length,
     merged: result.decisions.filter((decision) => decision.action === 'add').length,
     dryRun,
     ...result,

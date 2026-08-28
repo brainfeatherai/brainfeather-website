@@ -173,6 +173,7 @@ export type StoredFact = {
   $id: string;
   content: string;
   projectId?: string | null;
+  metadata?: string;
 };
 
 export function jaccardSimilarity(a: string, b: string): number {

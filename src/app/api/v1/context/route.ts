@@ -43,9 +43,8 @@ async function getContext(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const includeEvidence = params.get('includeEvidence') === 'true';
-  const projectId = params.get('projectId') ?? undefined;
+  const requestedProjectId = params.get('projectId') ?? undefined;
   const strictScope = strictScopeOf(params);
-  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   let query: string | undefined;
   const rawQuery = params.get('query');
   if (rawQuery !== null) {
@@ -72,9 +71,15 @@ async function getContext(request: Request) {
     params.get('sessionToken') ?? request.headers.get('x-brainfeather-session');
   let session = rawSession ? decodeSession(rawSession, auth.userId) : null;
   if (rawSession && !session) return fail(400, 'sessionToken is invalid.');
-  if (session?.projectId && session.projectId !== projectId) {
+  if (
+    session?.projectId &&
+    requestedProjectId &&
+    session.projectId !== requestedProjectId
+  ) {
     return fail(400, 'sessionToken belongs to a different project.');
   }
+  const projectId = requestedProjectId ?? session?.projectId;
+  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   if (!session) session = startSession(auth.userId, projectId);
   const proactive = needsProactiveRecall(session);
   session = markRecalled(session);

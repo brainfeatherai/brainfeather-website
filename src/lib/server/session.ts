@@ -14,11 +14,13 @@ export type AgentSession = {
 
 function sessionSecret(): string {
   return (
+    process.env.BRAINFEATHER_SESSION_SECRET ||
     process.env.BRAINFEATHER_DATA_INDEX_KEY ||
-    process.env.APPWRITE_API_KEY ||
     ''
   );
 }
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function startSession(userId: string, projectId?: string, now = new Date()): AgentSession {
   const startedAt = now.toISOString();
@@ -78,7 +80,9 @@ export function decodeSession(
       typeof session?.id !== 'string' ||
       session.userId !== userId ||
       typeof session.startedAt !== 'string' ||
-      typeof session.captureCount !== 'number'
+      typeof session.captureCount !== 'number' ||
+      !Number.isFinite(Date.parse(session.startedAt)) ||
+      Date.now() - Date.parse(session.startedAt) > SESSION_TTL_MS
     ) {
       return null;
     }

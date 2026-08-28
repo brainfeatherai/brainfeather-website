@@ -37,6 +37,9 @@ async function captureActivity(request: Request) {
     if (!parsed.ok) return fail(400, parsed.error);
     session = decodeSession(parsed.value, auth.userId);
     if (!session) return fail(400, 'sessionToken is invalid.');
+    if (session.projectId && projectId && session.projectId !== projectId) {
+      return fail(400, 'sessionToken belongs to a different project.');
+    }
   }
 
   const result = await captureFromActivity(auth.userId, {

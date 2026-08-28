@@ -36,3 +36,15 @@ test('maps memory types onto storage categories', () => {
     'project',
   );
 });
+
+test('requires a durable signal instead of capturing arbitrary agent claims', () => {
+  assert.deepEqual(
+    extractActivityFacts(
+      [
+        'The command completed successfully after three retries.',
+        'This project uses pnpm for package management.',
+      ].join('\n'),
+    ).map((fact) => fact.content),
+    ['This project uses pnpm for package management.'],
+  );
+});

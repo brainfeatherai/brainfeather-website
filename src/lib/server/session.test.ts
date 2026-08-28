@@ -38,3 +38,12 @@ test('signs session tokens so they cannot be swapped across users', () => {
   assert.equal(decodeSession(token, 'user-2', SECRET), null);
   assert.equal(decodeSession(token.slice(0, -2) + 'ab', 'user-1', SECRET), null);
 });
+
+test('rejects session tokens older than 24 hours', () => {
+  const expired = startSession(
+    'user-1',
+    'proj-1',
+    new Date(Date.now() - 24 * 60 * 60 * 1000 - 1),
+  );
+  assert.equal(decodeSession(encodeSession(expired, SECRET), 'user-1', SECRET), null);
+});

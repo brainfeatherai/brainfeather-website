@@ -33,6 +33,9 @@ const CATEGORIES = new Set<Candidate['category']>([
   'team',
 ]);
 
+const DURABLE_SIGNAL =
+  /\b(?:decided|chose|picked|switched|migrated|uses?|using|built with|configured|requires?|prefers?|always|never|convention|standard|architecture|repository|codebase|project|monorepo|backend|frontend|database|auth(?:entication)?|deploys?|runs on)\b/i;
+
 export function categoryForType(
   type: ReturnType<typeof detectMemoryType>,
   content: string,
@@ -59,7 +62,7 @@ export function extractActivityFacts(activity: string): CaptureCandidate[] {
   const facts: CaptureCandidate[] = [];
 
   for (const part of splitActivity(activity)) {
-    if (secretReason(part) || junkReason(part)) continue;
+    if (secretReason(part) || junkReason(part) || !DURABLE_SIGNAL.test(part)) continue;
     const key = part.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

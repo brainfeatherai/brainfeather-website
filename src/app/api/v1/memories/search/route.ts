@@ -9,6 +9,7 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { search } from '@/lib/server/memory-store';
+import { memoryEvidence, metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { CATEGORIES, dateTime, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
 
@@ -43,8 +44,14 @@ async function searchMemories(request: Request) {
     limit: limitOf(params.get('limit'), 10, 25),
     referenceAtMs,
   });
+  const includeEvidence = params.get('includeEvidence') === 'true';
+  const responseMemories = memories.map((memory) => ({
+    ...memory,
+    metadata: metadataWithoutEvidenceDigest(memory.metadata),
+    ...(includeEvidence ? { evidence: memoryEvidence(memory.metadata) ?? null } : {}),
+  }));
 
-  return Response.json({ memories, count: memories.length, query: q });
+  return Response.json({ memories: responseMemories, count: memories.length, query: q });
 }
 
 export const GET = withRequestTelemetry('memory.search', searchMemories);

@@ -23,7 +23,14 @@ export type ProvenanceType = (typeof PROVENANCE_TYPES)[number];
 export type MemoryProvenance = {
   type: ProvenanceType;
   reference?: string;
+  digest?: string;
 };
+
+export type MemoryEvidence = MemoryProvenance;
+
+export function isFileEvidenceDigest(value: unknown): value is string {
+  return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+}
 
 export type NormalizedMemoryMetadata = {
   observedAt: string;
@@ -53,6 +60,7 @@ function provenanceValue(value: unknown): unknown {
   return {
     type: candidate.type ?? candidate.t,
     reference: candidate.reference ?? candidate.r,
+    digest: candidate.digest ?? candidate.d,
   };
 }
 
@@ -87,6 +95,47 @@ function provenanceOf(value: unknown): MemoryProvenance {
     }
   }
   return { type: 'agent' };
+}
+
+export function memoryEvidence(raw: string | undefined): MemoryEvidence | undefined {
+  const value = objectOf(raw);
+  const candidate = provenanceValue(value.provenance ?? value.p);
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    return undefined;
+  }
+  const evidence = candidate as Record<string, unknown>;
+  if (
+    typeof evidence.type !== 'string' ||
+    !PROVENANCE_TYPES.includes(evidence.type as ProvenanceType)
+  ) {
+    return undefined;
+  }
+  return {
+    type: evidence.type as ProvenanceType,
+    ...(typeof evidence.reference === 'string' && evidence.reference
+      ? { reference: evidence.reference }
+      : {}),
+    ...(evidence.type === 'file' && isFileEvidenceDigest(evidence.digest)
+      ? { digest: evidence.digest }
+      : {}),
+  };
+}
+
+export function metadataWithoutEvidenceDigest(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const value = objectOf(raw);
+  const key = value.provenance !== undefined ? 'provenance' : value.p !== undefined ? 'p' : null;
+  if (!key) return raw;
+  const provenance = value[key];
+  if (typeof provenance !== 'object' || provenance === null || Array.isArray(provenance)) {
+    return raw;
+  }
+  const sanitized = { ...(provenance as Record<string, unknown>) };
+  const hadDigest = 'digest' in sanitized || 'd' in sanitized;
+  if (!hadDigest) return raw;
+  delete sanitized.digest;
+  delete sanitized.d;
+  return JSON.stringify({ ...value, [key]: sanitized });
 }
 
 export function normalizeMemoryMetadata(
@@ -146,7 +195,13 @@ function compactMetadata(value: Record<string, unknown>): Record<string, unknown
     ...(memoryType ? { mt: memoryType } : {}),
     ...(confidence !== undefined ? { c: confidence } : {}),
     ...(provenance?.type
-      ? { p: { t: provenance.type, ...(provenance.reference ? { r: provenance.reference } : {}) } }
+      ? {
+          p: {
+            t: provenance.type,
+            ...(provenance.reference ? { r: provenance.reference } : {}),
+            ...(provenance.digest ? { d: provenance.digest } : {}),
+          },
+        }
       : {}),
     ...(Array.isArray(supersedes) ? { is: supersedes } : {}),
     ...(observedAt ? { oa: observedAt } : {}),

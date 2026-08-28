@@ -11,6 +11,7 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { deleteMemory, syncMentionEdges, updateMemory } from '@/lib/server/memory-store';
+import { metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { enrichMemory } from '@/lib/server/think';
@@ -102,7 +103,12 @@ async function updateMemoryRoute(
       });
     }
 
-    return Response.json({ memory: updated });
+    return Response.json({
+      memory: {
+        ...updated,
+        metadata: metadataWithoutEvidenceDigest(updated.metadata),
+      },
+    });
   } catch (err) {
     reportServerError(err, {
       operation: 'memory.update',

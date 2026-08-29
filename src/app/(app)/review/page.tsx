@@ -114,7 +114,6 @@ function ReviewView() {
   useEffect(() => {
     if (!token) return;
     let active = true;
-    setError(null);
     fetchCandidates()
       .then((result) => {
         if (!active) return;

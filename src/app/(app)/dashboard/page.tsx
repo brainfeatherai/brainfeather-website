@@ -12,6 +12,7 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
@@ -151,6 +152,7 @@ function Dashboard() {
   const [category, setCategory] =
     useState<(typeof CATEGORIES)[number]>("context");
   const [adding, setAdding] = useState(false);
+  const [pendingReview, setPendingReview] = useState<number | null>(null);
 
   /* Pure fetch; setState happens in the caller so the effect body never
      sets state synchronously (react-hooks/set-state-in-effect). */
@@ -175,10 +177,17 @@ function Dashboard() {
         if (!active) return;
         setError(err instanceof Error ? err.message : "Could not load memories.");
       });
+    request<{ pendingCandidates: number }>("/overview")
+      .then((overview) => {
+        if (active) setPendingReview(overview.pendingCandidates);
+      })
+      .catch(() => {
+        if (active) setPendingReview(null);
+      });
     return () => {
       active = false;
     };
-  }, [token, fetchFacts]);
+  }, [token, fetchFacts, request]);
 
   async function addMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -288,7 +297,7 @@ function Dashboard() {
   return (
     <AppShell
       title="Memories"
-      intro="What Brainfeather currently holds about your work. Retracted facts are hidden."
+      intro="Approved facts currently in recall. Inferred captures wait in the review queue until you accept them."
       wide
     >
       {banner ? (
@@ -306,6 +315,16 @@ function Dashboard() {
           className="hairline mb-6 rounded-xl border bg-white/[0.035] p-4 text-[13px] text-forest/70"
         >
           {notice}
+        </p>
+      ) : null}
+
+      {pendingReview && pendingReview > 0 ? (
+        <p className="hairline mb-6 rounded-xl border border-emerald/25 bg-emerald/10 p-4 text-[13px] text-forest/80">
+          {pendingReview} captured fact{pendingReview === 1 ? "" : "s"} waiting in the{" "}
+          <Link href="/review" className="underline decoration-emerald/40 underline-offset-2">
+            review queue
+          </Link>
+          . They are not in recall yet.
         </p>
       ) : null}
 

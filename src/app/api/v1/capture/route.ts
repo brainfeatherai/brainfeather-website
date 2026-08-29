@@ -1,5 +1,6 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { captureFromActivity } from '@/lib/server/capture';
+import { PREFERRED_REGION } from '@/lib/server/region';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import {
   decodeSession,
@@ -66,4 +67,6 @@ async function captureActivity(request: Request) {
   });
 }
 
+export const preferredRegion = PREFERRED_REGION;
+export const runtime = 'nodejs';
 export const POST = withRequestTelemetry('memory.capture', captureActivity);

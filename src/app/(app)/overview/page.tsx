@@ -5,16 +5,7 @@ import { useEffect, useState } from "react";
 import { Activity, Brain, CircleDot, ClipboardCheck, KeyRound, Network, Timer } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
-import { useApiSession, type RequestAnalytics } from "@/lib/api-client";
-
-type OverviewData = {
-  memories: number;
-  entities: number;
-  edges: number;
-  keys: number;
-  pendingCandidates: number;
-  analytics: RequestAnalytics;
-};
+import { useApiSession, type OverviewData } from "@/lib/api-client";
 
 function Metric({
   label,
@@ -43,6 +34,17 @@ function Metric({
   );
 }
 
+function PathMs({ label, value }: { label: string; value?: number }) {
+  return (
+    <div className="rounded-lg bg-paper-dim p-4">
+      <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/30">{label}</p>
+      <p className="mt-2 text-[22px] font-semibold text-forest">
+        {value == null ? "—" : `${value} ms`}
+      </p>
+    </div>
+  );
+}
+
 function OverviewView() {
   const { token, error: sessionError, request } = useApiSession();
   const [data, setData] = useState<OverviewData | null>(null);
@@ -66,7 +68,11 @@ function OverviewView() {
   }, [token, request]);
 
   return (
-    <AppShell title="Overview" intro="Memory health, graph coverage, and API activity." wide>
+    <AppShell
+      title="Overview"
+      intro="Client, MCP, and dashboard on one path. Recall stays off the prompt's critical path; inferred facts wait here until you approve them."
+      wide
+    >
       {error ?? sessionError ? (
         <p className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200">
           {error ?? sessionError}
@@ -80,17 +86,58 @@ function OverviewView() {
       ) : data ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Metric label="Active memories" value={data.memories} hint="Available to context retrieval" icon={Brain} />
-            <Metric label="Review queue" value={data.pendingCandidates} hint="Captured facts waiting for approval" icon={ClipboardCheck} />
+            <Metric label="Active memories" value={data.memories} hint="What recall can inject" icon={Brain} />
+            <Metric
+              label="Review queue"
+              value={data.pendingCandidates}
+              hint="Captured facts waiting for approval"
+              icon={ClipboardCheck}
+            />
             <Metric label="Graph nodes" value={data.entities} hint={`${data.edges} graph connections`} icon={CircleDot} />
             <Metric label="API keys" value={data.keys} hint="Revocable client credentials" icon={KeyRound} />
             <Metric
               label="API calls · 30d"
               value={data.analytics.configured ? data.analytics.totalCalls : "—"}
-              hint={data.analytics.configured ? `${data.analytics.successRate}% successful` : "Telemetry not configured"}
+              hint={
+                data.analytics.configured
+                  ? `${data.analytics.successRate}% successful`
+                  : "Telemetry not configured"
+              }
               icon={Activity}
             />
           </div>
+
+          <section className="hairline mt-6 rounded-xl border bg-paper p-5">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h2 className="text-[15px] font-semibold text-forest">Client → MCP → dashboard</h2>
+                <p className="mt-1 max-w-2xl text-[11px] text-forest/40">
+                  Hooks recall before the prompt and queue capture after the session. The dashboard
+                  is the only place inferred facts become memories.
+                </p>
+              </div>
+              {data.pendingCandidates > 0 ? (
+                <Link
+                  href="/review"
+                  className="rounded-md border border-emerald/35 bg-emerald/10 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-emerald"
+                >
+                  Review {data.pendingCandidates} pending
+                </Link>
+              ) : (
+                <Link
+                  href="/api-keys"
+                  className="rounded-md border border-white/[0.09] px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/50 hover:text-forest"
+                >
+                  Connect a client
+                </Link>
+              )}
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <PathMs label="Recall · context.read" value={data.path.recallMs} />
+              <PathMs label="Hosted MCP · mcp.http" value={data.path.mcpMs} />
+              <PathMs label="Capture · memory.capture" value={data.path.captureMs} />
+            </div>
+          </section>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="hairline rounded-xl border bg-paper p-5">
@@ -99,7 +146,10 @@ function OverviewView() {
                   <h2 className="text-[15px] font-semibold text-forest">Request performance</h2>
                   <p className="mt-1 text-[11px] text-forest/40">API-key traffic during the last 30 days</p>
                 </div>
-                <Link href="/requests" className="rounded-md border border-white/[0.09] px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/50 hover:text-forest">
+                <Link
+                  href="/requests"
+                  className="rounded-md border border-white/[0.09] px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/50 hover:text-forest"
+                >
                   View requests
                 </Link>
               </div>
@@ -107,12 +157,16 @@ function OverviewView() {
                 <div className="mt-5 grid grid-cols-3 gap-3">
                   <div className="rounded-lg bg-paper-dim p-4">
                     <Timer size={14} className="text-emerald/60" aria-hidden />
-                    <p className="mt-3 text-[22px] font-semibold text-forest">{data.analytics.averageDurationMs} ms</p>
+                    <p className="mt-3 text-[22px] font-semibold text-forest">
+                      {data.analytics.averageDurationMs} ms
+                    </p>
                     <p className="mt-1 text-[9px] uppercase tracking-[0.1em] text-forest/30">Average</p>
                   </div>
                   <div className="rounded-lg bg-paper-dim p-4">
                     <Network size={14} className="text-sky-300/60" aria-hidden />
-                    <p className="mt-3 text-[22px] font-semibold text-forest">{data.analytics.p95DurationMs} ms</p>
+                    <p className="mt-3 text-[22px] font-semibold text-forest">
+                      {data.analytics.p95DurationMs} ms
+                    </p>
                     <p className="mt-1 text-[9px] uppercase tracking-[0.1em] text-forest/30">P95</p>
                   </div>
                   <div className="rounded-lg bg-paper-dim p-4">
@@ -123,7 +177,8 @@ function OverviewView() {
                 </div>
               ) : (
                 <div className="mt-5 rounded-lg border border-dashed border-white/[0.10] bg-paper-dim p-6 text-[12px] leading-relaxed text-forest/45">
-                  Request telemetry is ready. API-key calls will appear here as clients use the deployed API.
+                  Request telemetry is ready. API-key calls will appear here as clients use the
+                  deployed API.
                 </div>
               )}
             </section>
@@ -138,8 +193,13 @@ function OverviewView() {
                   ["Create API key", "/api-keys"],
                   ["Inspect requests", "/requests"],
                 ].map(([label, href]) => (
-                  <Link key={href} href={href} className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-[12px] text-forest/60 transition-colors hover:border-white/[0.14] hover:text-forest">
-                    {label}<span className="text-forest/25">→</span>
+                  <Link
+                    key={href}
+                    href={href}
+                    className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-[12px] text-forest/60 transition-colors hover:border-white/[0.14] hover:text-forest"
+                  >
+                    {label}
+                    <span className="text-forest/25">→</span>
                   </Link>
                 ))}
               </div>
@@ -152,5 +212,9 @@ function OverviewView() {
 }
 
 export default function OverviewPage() {
-  return <RequireAuth><OverviewView /></RequireAuth>;
+  return (
+    <RequireAuth>
+      <OverviewView />
+    </RequireAuth>
+  );
 }

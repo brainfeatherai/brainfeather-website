@@ -18,6 +18,7 @@ import { authenticate, fail } from '@/lib/server/api-auth';
 import { compileContext } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
 import { memoryEvidence } from '@/lib/server/memory-temporal';
+import { PREFERRED_REGION } from '@/lib/server/region';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import {
   decodeSession,
@@ -81,10 +82,13 @@ async function getContext(request: Request) {
 
   /* Only active facts. A superseded decision reaching a prompt is the
      precise failure this product claims to prevent. */
+  /* Hook recall asks for a tight token budget. Fetch fewer rows so decrypt
+     stays on the prompt's critical path. Explicit tool calls keep the full window. */
+  const recallLimit = maxTokens.value <= 1_600 ? 40 : 100;
   const all = await listActive(auth.userId, {
     projectId,
     strictScope,
-    limit: 100,
+    limit: recallLimit,
     referenceAtMs,
   });
 
@@ -137,4 +141,6 @@ async function getContext(request: Request) {
   });
 }
 
+export const preferredRegion = PREFERRED_REGION;
+export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('context.read', getContext);

@@ -40,6 +40,7 @@ HTTP MCP is at https://brainfeather.com/mcp.
 ## What it does
 
 - Captures durable project facts in the background, off the critical path, so the session never waits on extraction.
+- Client → MCP → dashboard: inferred facts wait at /review until approved; they do not enter recall on their own.
 - Retires stale facts rather than merely outranking them: change a decision and the previous one is marked invalid, so later reads return only what still holds.
 - Filters conversational noise. Greetings and thinking-out-loud are not stored; tech choices, project rules and conventions are.
 - Shares one store across every connected client, so a fact written from one tool is readable by the others on their next run.

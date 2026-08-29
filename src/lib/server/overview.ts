@@ -48,5 +48,14 @@ export async function readOverview(userId: string) {
     keys,
     pendingCandidates,
     analytics,
+    path: {
+      recallMs: durationOf(analytics, 'context.read'),
+      mcpMs: durationOf(analytics, 'mcp.http'),
+      captureMs: durationOf(analytics, 'memory.capture'),
+    },
   };
+}
+
+function durationOf(analytics: Awaited<ReturnType<typeof readRequestAnalytics>>, operation: string) {
+  return analytics.byOperation.find((item) => item.operation === operation)?.averageDurationMs;
 }

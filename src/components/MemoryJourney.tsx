@@ -267,7 +267,7 @@ const STEPS = [
     number: "01",
     eyebrow: "Connect",
     title: "One setup. Every coding agent remembers.",
-    body: "Add Brainfeather as an MCP server once, then run init so Cursor, Claude Code, and OpenCode recall automatically. Inferred facts wait in a review queue until you approve them.",
+    body: "Add Brainfeather as an MCP server once, then run init so Cursor, Claude Code, and OpenCode recall automatically. Client → MCP → dashboard: inferred facts wait in review until you approve them.",
     Visual: ConnectVisual,
   },
   {

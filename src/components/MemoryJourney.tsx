@@ -295,7 +295,7 @@ const STEPS = [
 
 export default function MemoryJourney() {
   return (
-    <section className="rule-t mt-24 pt-20">
+    <section id="integrations" className="rule-t mt-24 scroll-mt-28 pt-20">
       <Reveal className="mx-auto max-w-2xl text-center">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald">
           Beyond project memory

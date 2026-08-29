@@ -112,7 +112,7 @@ export default function Home() {
           <CornerTicks />
 
           {/* ── DIAGRAM ── */}
-          <div id="how" className="rule-t rule-mark mt-20 pt-20">
+          <div id="how" className="rule-t rule-mark mt-20 scroll-mt-28 pt-20">
             {/* the rule breaks around the mark — see .rule-mark */}
             <span
               className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2"

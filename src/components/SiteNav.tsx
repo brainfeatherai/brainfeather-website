@@ -38,7 +38,7 @@ function DotRing({ className = "" }: { className?: string }) {
    there are docs, Contact is a link that keeps its word. */
 const LINKS = [
   { label: "How it works", href: "/#how" },
-  { label: "Integrations", href: "/#how" },
+  { label: "Integrations", href: "/#integrations" },
   { label: "Contact", href: "/contact" },
 ];
 

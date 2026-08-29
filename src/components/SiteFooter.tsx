@@ -54,7 +54,7 @@ const COLUMNS = [
     head: "Product",
     links: [
       { label: "How it works", href: "/#how" },
-      { label: "Integrations", href: "/#how" },
+      { label: "Integrations", href: "/#integrations" },
     ],
   },
   {

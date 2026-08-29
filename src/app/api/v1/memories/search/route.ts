@@ -9,7 +9,6 @@
 
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { search } from '@/lib/server/memory-store';
-import { PREFERRED_REGION } from '@/lib/server/region';
 import { memoryEvidence, metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { CATEGORIES, dateTime, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
@@ -55,6 +54,6 @@ async function searchMemories(request: Request) {
   return Response.json({ memories: responseMemories, count: memories.length, query: q });
 }
 
-export const preferredRegion = PREFERRED_REGION;
+export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('memory.search', searchMemories);

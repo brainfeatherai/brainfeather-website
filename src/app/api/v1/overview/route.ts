@@ -1,10 +1,9 @@
 import { authenticateDashboard, fail } from '@/lib/server/api-auth';
 import { readOverview } from '@/lib/server/overview';
-import { PREFERRED_REGION } from '@/lib/server/region';
 
 const noStore = { 'Cache-Control': 'no-store, private' };
 
-export const preferredRegion = PREFERRED_REGION;
+export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 
 export async function GET(request: Request) {

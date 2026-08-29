@@ -1,11 +1,10 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { handleHostedMcp, HOSTED_MCP_CORS } from '@/lib/server/hosted-mcp';
-import { PREFERRED_REGION } from '@/lib/server/region';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { str } from '@/lib/server/validate';
 
 export const runtime = 'nodejs';
-export const preferredRegion = PREFERRED_REGION;
+export const preferredRegion = 'sin1';
 export const maxDuration = 30;
 
 function withCors(response: Response) {

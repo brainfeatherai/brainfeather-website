@@ -90,23 +90,36 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    let settled = false;
     const generation = authGeneration.current;
+    const finish = () => {
+      if (!active || settled || generation !== authGeneration.current) return;
+      settled = true;
+      setLoading(false);
+    };
+    /* Appwrite's account.get() can hang when the endpoint is unreachable.
+       Fail open to /login instead of leaving the console on "Checking session…". */
+    const timer = window.setTimeout(() => {
+      setUser(null);
+      finish();
+    }, 8_000);
     // getCurrentUser() swallows the 401 that Appwrite throws for an
     // anonymous visitor and returns null, so no try/catch needed here.
     authService.getCurrentUser().then(async (u) => {
-      if (!active || generation !== authGeneration.current) return;
+      if (!active || settled || generation !== authGeneration.current) return;
       if (u) {
         const accessJwt = await refreshJwt();
+        if (settled || generation !== authGeneration.current) return;
         if (!accessJwt) {
           await authService.logout().catch(() => {});
-          if (active) setUser(null);
+          if (active && !settled) setUser(null);
         } else {
           try {
             await authService.ensureProfile(accessJwt);
-            if (active) setUser(u);
+            if (active && !settled) setUser(u);
           } catch {
             await authService.logout().catch(() => {});
-            if (active) {
+            if (active && !settled) {
               setUser(null);
               setJwt(null);
               setJwtError('Your Brainfeather access request has not been approved yet.');
@@ -116,10 +129,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
       }
-      if (active && generation === authGeneration.current) setLoading(false);
+      finish();
+    }).finally(() => {
+      window.clearTimeout(timer);
     });
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
   }, [refreshJwt]);
 

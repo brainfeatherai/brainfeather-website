@@ -133,9 +133,9 @@ function OverviewView() {
               )}
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <PathMs label="Recall · context.read" value={data.path.recallMs} />
-              <PathMs label="Hosted MCP · mcp.http" value={data.path.mcpMs} />
-              <PathMs label="Capture · memory.capture" value={data.path.captureMs} />
+              <PathMs label="Recall · context.read" value={data.path?.recallMs} />
+              <PathMs label="Hosted MCP · mcp.http" value={data.path?.mcpMs} />
+              <PathMs label="Capture · memory.capture" value={data.path?.captureMs} />
             </div>
           </section>
 

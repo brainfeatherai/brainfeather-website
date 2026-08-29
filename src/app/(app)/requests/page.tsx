@@ -14,6 +14,9 @@ const OPERATION_LABELS: Record<string, string> = {
   "memory.search": "Search",
   "memory.create": "Save",
   "memory.list": "List memories",
+  "memory_candidate.list": "Review queue",
+  "memory_candidate.approve": "Approve capture",
+  "memory_candidate.reject": "Reject capture",
   "stats.read": "Stats",
 };
 

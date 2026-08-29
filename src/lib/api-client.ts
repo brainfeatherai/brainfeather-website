@@ -112,7 +112,7 @@ export type OverviewData = {
   keys: number;
   pendingCandidates: number;
   analytics: RequestAnalytics;
-  path: {
+  path?: {
     recallMs?: number;
     mcpMs?: number;
     captureMs?: number;

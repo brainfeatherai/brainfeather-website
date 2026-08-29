@@ -155,7 +155,7 @@ export default function Home() {
                 {
                   step: "MCP",
                   title: "stdio or /mcp",
-                  body: "Pin @brainfeather/mcp@1.5.0. Context is compiled on the Singapore API so the model does not wait on a second extraction call.",
+                  body: "Pin @brainfeather/mcp@1.5.1. Context is compiled on the Singapore API so the model does not wait on a second extraction call.",
                 },
                 {
                   step: "Dashboard",

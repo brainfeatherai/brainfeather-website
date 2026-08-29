@@ -19,7 +19,18 @@ import { compileContext } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
 import { memoryEvidence } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
+import {
+  decodeSession,
+  markRecalled,
+  needsProactiveRecall,
+  startSession,
+  tryEncodeSession,
+} from '@/lib/server/session';
 import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
+
+function signedSession(sessionToken?: string): { sessionToken?: string } {
+  return sessionToken ? { sessionToken } : {};
+}
 
 async function getContext(request: Request) {
   const auth = await authenticate(request);
@@ -27,9 +38,8 @@ async function getContext(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const includeEvidence = params.get('includeEvidence') === 'true';
-  const projectId = params.get('projectId') ?? undefined;
+  const requestedProjectId = params.get('projectId') ?? undefined;
   const strictScope = strictScopeOf(params);
-  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   let query: string | undefined;
   const rawQuery = params.get('query');
   if (rawQuery !== null) {
@@ -52,6 +62,23 @@ async function getContext(request: Request) {
   });
   if (!maxTokens.ok) return fail(400, maxTokens.error);
 
+  const rawSession =
+    params.get('sessionToken') ?? request.headers.get('x-brainfeather-session');
+  let session = rawSession ? decodeSession(rawSession, auth.userId) : null;
+  if (rawSession && !session) return fail(400, 'sessionToken is invalid.');
+  if (
+    session?.projectId &&
+    requestedProjectId &&
+    session.projectId !== requestedProjectId
+  ) {
+    return fail(400, 'sessionToken belongs to a different project.');
+  }
+  const projectId = requestedProjectId ?? session?.projectId;
+  if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
+  if (!session) session = startSession(auth.userId, projectId);
+  const proactive = needsProactiveRecall(session);
+  session = markRecalled(session);
+
   /* Only active facts. A superseded decision reaching a prompt is the
      precise failure this product claims to prevent. */
   const all = await listActive(auth.userId, {
@@ -61,15 +88,19 @@ async function getContext(request: Request) {
     referenceAtMs,
   });
 
+  const sessionToken = tryEncodeSession(session);
+
   if (query !== undefined || rawMaxTokens !== null) {
-    return Response.json(
-      compileContext(all, {
+    return Response.json({
+      ...compileContext(all, {
         query,
         maxTokens: maxTokens.value,
         asOfMs: referenceAtMs,
         includeEvidence,
       }),
-    );
+      ...signedSession(sessionToken),
+      proactiveRecall: proactive,
+    });
   }
 
   const rows = (...categories: string[]) =>
@@ -101,6 +132,8 @@ async function getContext(request: Request) {
           },
         }
       : {}),
+    ...signedSession(sessionToken),
+    proactiveRecall: proactive,
   });
 }
 

@@ -17,6 +17,29 @@ test('keeps canonical technology extraction and aliases', () => {
   ]);
 });
 
+test('canonicalizes Apple development tooling aliases', () => {
+  assert.deepEqual(entities('The app uses Xcode, SwiftUI, and UIKit.'), [
+    'tool:swiftui',
+    'tool:uikit',
+    'tool:xcode',
+  ]);
+  assert.deepEqual(entities('Built with X Code, Swift UI, and UI Kit.'), [
+    'tool:swiftui',
+    'tool:uikit',
+    'tool:xcode',
+  ]);
+});
+
+test('extracts Xcode from OpenCode-style stack facts without inventing Node.js', () => {
+  assert.deepEqual(entities('Node-based app with Xcode'), ['tool:xcode']);
+  assert.deepEqual(entities('This is a node-based app built with Xcode.'), ['tool:xcode']);
+  assert.deepEqual(entities('The Brainfeather MCP project runs on Node.js.'), [
+    'project:brainfeather mcp',
+    'tool:nodejs',
+  ]);
+  assert.deepEqual(entities('This project uses Node for the backend.'), ['tool:nodejs']);
+});
+
 test('does not turn ordinary project prose into a named project', () => {
   assert.deepEqual(entities('This project uses React and the next step is deployment.'), [
     'tool:react',

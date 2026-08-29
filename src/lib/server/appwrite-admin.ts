@@ -41,6 +41,7 @@ export const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID ?? 'brai
 export const COLLECTIONS = {
   users: 'users',
   memories: 'memories',
+  memoryCandidates: 'memory_candidates',
   entities: 'entities',
   edges: 'edges',
   apiKeys: 'api_keys',

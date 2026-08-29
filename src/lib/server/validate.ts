@@ -28,6 +28,9 @@ export const SOURCES = [
   'cursor',
   'slack',
   'chrome',
+  'opencode',
+  'codex',
+  'antigravity',
 ] as const;
 
 export const ENTITY_TYPES = [

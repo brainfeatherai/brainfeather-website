@@ -112,6 +112,18 @@ export type SaveDecision = {
   invalidated?: string[];
 };
 
+export type MemoryCandidate = {
+  $id: string;
+  $createdAt: string;
+  source: string;
+  title?: string;
+  content: string;
+  category: string;
+  projectId?: string;
+  confidence: number;
+  status: "pending" | "approved" | "rejected";
+};
+
 export type ApiRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 export function decisionLine(d: SaveDecision): string {

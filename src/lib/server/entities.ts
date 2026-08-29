@@ -59,6 +59,9 @@ const CANONICAL = new Map<string, EntityType>([
   // build
   ['vite', 'tool'], ['webpack', 'tool'], ['esbuild', 'tool'], ['rollup', 'tool'],
   ['turborepo', 'tool'], ['nx', 'tool'], ['babel', 'tool'],
+  // Apple development
+  ['xcode', 'tool'], ['swiftui', 'tool'], ['uikit', 'tool'],
+  ['cocoapods', 'tool'],
   // infra
   ['docker', 'tool'], ['kubernetes', 'tool'], ['terraform', 'tool'],
   ['vercel', 'tool'], ['netlify', 'tool'], ['cloudflare', 'tool'],
@@ -88,6 +91,9 @@ const ALIASES = new Map<string, string>([
   ['k8s', 'kubernetes'], ['k8', 'kubernetes'],
   ['turbo', 'turborepo'],
   ['tailwindcss', 'tailwind'],
+  ['xcode', 'xcode'], ['xcodeproj', 'xcode'],
+  ['swiftui', 'swiftui'], ['uikit', 'uikit'],
+  ['cocoapods', 'cocoapods'],
   ['gpt', 'openai'], ['chatgpt', 'openai'], ['claude', 'anthropic'],
   ['cf', 'cloudflare'], ['workers', 'cloudflare'],
   ['amazon', 'aws'],
@@ -98,7 +104,7 @@ const ALIASES = new Map<string, string>([
 /* Real words before they are technology names. A bare occurrence is
    ignored; one near a technical cue counts. Without this, "go ahead and
    fix it" recorded Go as a project language. */
-const AMBIGUOUS = new Set(['go', 'rust', 'next', 'solid', 'spring', 'fly', 'rest', 'java', 'nx', 'ci']);
+const AMBIGUOUS = new Set(['go', 'rust', 'next', 'solid', 'spring', 'fly', 'rest', 'java', 'nx', 'ci', 'node']);
 
 /* Cues that make an ambiguous term a technology reference. Kept short —
    every entry is a phrase that only precedes or follows a tech noun. */

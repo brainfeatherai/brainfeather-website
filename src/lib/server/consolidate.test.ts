@@ -2,7 +2,12 @@ import './test-env.ts';
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergeClusterContent, relatedMemoryClusters } from './consolidate.ts';
+import {
+  consolidationCommits,
+  memoriesByProject,
+  mergeClusterContent,
+  relatedMemoryClusters,
+} from './consolidate.ts';
 
 test('clusters related memories in the same category', () => {
   const clusters = relatedMemoryClusters([
@@ -40,4 +45,42 @@ test('merges overlapping cluster text without repeating the shorter copy', () =>
     ]),
     'This project uses Vitest for unit tests.',
   );
+});
+
+test('consolidation stays a dry-run unless commit is explicit', () => {
+  assert.equal(consolidationCommits({}), false);
+  assert.equal(consolidationCommits({ commit: false }), false);
+  assert.equal(consolidationCommits({ commit: true }), true);
+});
+
+test('keeps similar memories from different projects in separate clusters', () => {
+  const memories = [
+    {
+      $id: 'a',
+      $createdAt: '2026-08-28T12:00:00.000Z',
+      userId: 'user-1',
+      source: 'cursor',
+      category: 'code',
+      content: 'This project uses Vitest for unit tests.',
+      status: 'active' as const,
+      projectId: 'alpha',
+    },
+    {
+      $id: 'b',
+      $createdAt: '2026-08-28T13:00:00.000Z',
+      userId: 'user-1',
+      source: 'cursor',
+      category: 'code',
+      content: 'This project uses Vitest for unit tests in CI.',
+      status: 'active' as const,
+      projectId: 'beta',
+    },
+  ];
+  const groups = memoriesByProject(memories);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(
+    groups.flatMap((group) => relatedMemoryClusters(group)),
+    [],
+  );
+  assert.equal(relatedMemoryClusters(memories).length, 1);
 });

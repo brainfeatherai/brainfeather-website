@@ -15,12 +15,13 @@ async function consolidateMemories(request: Request) {
     projectId = parsed.value;
   }
 
-  const dryRun = body.dryRun === true;
-  const result = await consolidateProjectMemories(auth.userId, { projectId, dryRun });
+  const commit = body.commit === true;
+  const result = await consolidateProjectMemories(auth.userId, { projectId, commit });
   return Response.json({
     clusterCount: result.clusters.length,
     merged: result.decisions.filter((decision) => decision.action === 'add').length,
-    dryRun,
+    dryRun: !commit,
+    commit,
     ...result,
   });
 }

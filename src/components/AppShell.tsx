@@ -10,6 +10,7 @@ import {
   Gauge,
   ChevronDown,
   CircleDot,
+  ClipboardCheck,
   ExternalLink,
   KeyRound,
   Network,
@@ -24,6 +25,7 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 const KNOWLEDGE_NAV: readonly NavItem[] = [
   { href: "/overview", label: "Overview", icon: Gauge },
   { href: "/dashboard", label: "Memories", icon: Brain },
+  { href: "/review", label: "Review queue", icon: ClipboardCheck },
   { href: "/nodes", label: "Memory graph", icon: CircleDot },
   { href: "/graph", label: "Graph editor", icon: Network },
   { href: "/requests", label: "Requests", icon: Activity },

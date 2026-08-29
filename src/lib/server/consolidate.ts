@@ -2,7 +2,7 @@ import 'server-only';
 
 import { jaccardSimilarity, think, type Decision } from './think.ts';
 import type { MemoryDoc } from './memory-store.ts';
-import { listActive } from './memory-store.ts';
+import { listAllActive } from './memory-store.ts';
 
 export type MemoryCluster = {
   ids: string[];
@@ -88,17 +88,36 @@ export function relatedMemoryClusters(
     });
 }
 
+export function consolidationCommits(opts: { commit?: boolean }): boolean {
+  return opts.commit === true;
+}
+
+export function memoriesByProject(
+  memories: readonly MemoryDoc[],
+  projectId?: string,
+): MemoryDoc[][] {
+  const scoped = projectId
+    ? memories.filter((memory) => memory.projectId === projectId)
+    : [...memories];
+  const groups = new Map<string, MemoryDoc[]>();
+  for (const memory of scoped) {
+    const key = memory.projectId ?? '';
+    const group = groups.get(key) ?? [];
+    group.push(memory);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 export async function consolidateProjectMemories(
   userId: string,
-  opts: { projectId?: string; dryRun?: boolean } = {},
+  opts: { projectId?: string; commit?: boolean } = {},
 ): Promise<{ clusters: MemoryCluster[]; decisions: Decision[] }> {
-  const memories = await listActive(userId, {
-    projectId: opts.projectId,
-    strictScope: opts.projectId !== undefined,
-    limit: 100,
-  });
-  const clusters = relatedMemoryClusters(memories);
-  if (opts.dryRun) return { clusters, decisions: [] };
+  const memories = await listAllActive(userId);
+  const clusters = memoriesByProject(memories, opts.projectId).flatMap((group) =>
+    relatedMemoryClusters(group),
+  );
+  if (!consolidationCommits(opts)) return { clusters, decisions: [] };
 
   const decisions: Decision[] = [];
   for (const cluster of clusters) {
@@ -106,6 +125,7 @@ export async function consolidateProjectMemories(
     const rest = cluster.ids.slice(1);
     const current = memories.find((memory) => memory.$id === newest);
     if (!current || rest.length === 0) continue;
+    const clusterProjectId = current.projectId ?? opts.projectId;
     const sameAsNewest =
       cluster.mergedContent === current.content.replace(/\s+/g, ' ').trim();
 
@@ -115,7 +135,7 @@ export async function consolidateProjectMemories(
           await think(userId, {
             content: current.content,
             category: cluster.category,
-            projectId: opts.projectId,
+            projectId: clusterProjectId,
             supersedesId: id,
             provenance: { type: 'agent', reference: `consolidate:${newest}` },
             confidence: 0.85,
@@ -128,7 +148,7 @@ export async function consolidateProjectMemories(
     const first = await think(userId, {
         content: cluster.mergedContent,
         category: cluster.category,
-        projectId: opts.projectId,
+        projectId: clusterProjectId,
         supersedesId: rest[0],
         provenance: { type: 'agent', reference: `consolidate:${newest}` },
         confidence: 0.85,
@@ -141,7 +161,7 @@ export async function consolidateProjectMemories(
         await think(userId, {
           content: cluster.mergedContent,
           category: cluster.category,
-          projectId: opts.projectId,
+          projectId: clusterProjectId,
           supersedesId: id,
           provenance: { type: 'agent', reference: `consolidate:${newest}` },
           confidence: 0.85,

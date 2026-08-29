@@ -2,22 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, Brain, CircleDot, KeyRound, Network, Timer } from "lucide-react";
+import { Activity, Brain, CircleDot, ClipboardCheck, KeyRound, Network, Timer } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
-import {
-  useApiSession,
-  type ApiKeyRow,
-  type EdgeRow,
-  type EntityRow,
-  type RequestAnalytics,
-} from "@/lib/api-client";
+import { useApiSession, type RequestAnalytics } from "@/lib/api-client";
 
 type OverviewData = {
   memories: number;
   entities: number;
   edges: number;
   keys: number;
+  pendingCandidates: number;
   analytics: RequestAnalytics;
 };
 
@@ -56,22 +51,11 @@ function OverviewView() {
   useEffect(() => {
     if (!token) return;
     let active = true;
-    Promise.all([
-      request<{ total: number }>("/stats"),
-      request<{ entities: EntityRow[] }>("/entities"),
-      request<{ edges: EdgeRow[] }>("/edges"),
-      request<{ keys: ApiKeyRow[] }>("/keys"),
-      request<RequestAnalytics>("/analytics/requests?days=30"),
-    ])
-      .then(([stats, entities, edges, keys, analytics]) => {
+    request<OverviewData>("/overview")
+      .then((overview) => {
         if (!active) return;
-        setData({
-          memories: stats.total,
-          entities: entities.entities.length,
-          edges: edges.edges.filter((edge) => !edge.validTo).length,
-          keys: keys.keys.length,
-          analytics,
-        });
+        setError(null);
+        setData(overview);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : "Could not load overview.");
@@ -89,15 +73,16 @@ function OverviewView() {
         </p>
       ) : null}
 
-      {!data ? (
+      {!data && !(error ?? sessionError) ? (
         <output className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">
           Loading overview…
         </output>
-      ) : (
+      ) : data ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <Metric label="Active memories" value={data.memories} hint="Available to context retrieval" icon={Brain} />
-            <Metric label="Graph nodes" value={data.entities} hint={`${data.edges} active relationships`} icon={CircleDot} />
+            <Metric label="Review queue" value={data.pendingCandidates} hint="Captured facts waiting for approval" icon={ClipboardCheck} />
+            <Metric label="Graph nodes" value={data.entities} hint={`${data.edges} graph connections`} icon={CircleDot} />
             <Metric label="API keys" value={data.keys} hint="Revocable client credentials" icon={KeyRound} />
             <Metric
               label="API calls · 30d"
@@ -148,6 +133,7 @@ function OverviewView() {
               <div className="mt-4 grid gap-2">
                 {[
                   ["Manage memories", "/dashboard"],
+                  ["Review captured facts", "/review"],
                   ["Explore memory graph", "/nodes"],
                   ["Create API key", "/api-keys"],
                   ["Inspect requests", "/requests"],
@@ -160,7 +146,7 @@ function OverviewView() {
             </section>
           </div>
         </>
-      )}
+      ) : null}
     </AppShell>
   );
 }

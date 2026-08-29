@@ -38,6 +38,29 @@ export interface Memory {
   metadata?: Record<string, unknown>;
 }
 
+export interface MemoryCandidate {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  userId: string;
+  sessionId?: string;
+  source: Memory['source'];
+  category: Memory['category'];
+  content: string;
+  title?: string;
+  projectId?: string;
+  provenance?: Record<string, unknown>;
+  confidence: number;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewedAt?: string;
+  decision?: {
+    action: 'add' | 'duplicate' | 'reject';
+    id?: string;
+    reason?: string;
+    invalidated?: string[];
+  };
+}
+
 export interface ContextRule {
   $id: string;
   $createdAt: string;

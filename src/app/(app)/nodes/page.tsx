@@ -11,7 +11,7 @@
    as an overlay so the visualization does not shrink when inspected.
    ──────────────────────────────────────────────────────────────── */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, LocateFixed, Network, RefreshCw, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
@@ -57,17 +57,13 @@ type GraphData = {
 
 async function loadGraphData(
   request: ApiRequest,
-  backfillWhenEmpty: boolean,
+  onEntities?: (entities: EntityRow[]) => void,
 ): Promise<GraphData> {
-  let entityResult = await request<{ entities: EntityRow[] }>("/entities");
-  if (backfillWhenEmpty && entityResult.entities.length === 0) {
-    entityResult = await request<{ entities: EntityRow[] }>(
-      "/entities/backfill",
-      { method: "POST" },
-    );
-  }
-
-  const [edgeResult, memoryResult] = await Promise.all([
+  const [entityResult, edgeResult, memoryResult] = await Promise.all([
+    request<{ entities: EntityRow[] }>("/entities").then((result) => {
+      onEntities?.(result.entities);
+      return result;
+    }),
     request<{ edges: EdgeRow[] }>("/edges").catch(() => null),
     request<{ memories: Fact[] }>("/memories?limit=100").catch(() => null),
   ]);
@@ -237,7 +233,7 @@ function tickSimulation(
   edgeList: SimEdge[],
   draggedId?: string,
 ): void {
-  const ids = new Set(sim.map((node) => node.id));
+  const byId = new Map(sim.map((node) => [node.id, node]));
 
   for (const node of sim) {
     node.vx = 0;
@@ -262,9 +258,9 @@ function tickSimulation(
   }
 
   for (const edge of edgeList) {
-    const source = sim.find((node) => node.id === edge.source);
-    const target = sim.find((node) => node.id === edge.target);
-    if (!source || !target || !ids.has(source.id) || !ids.has(target.id)) continue;
+    const source = byId.get(edge.source);
+    const target = byId.get(edge.target);
+    if (!source || !target) continue;
     const dx = target.x - source.x;
     const dy = target.y - source.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -425,6 +421,7 @@ function GraphCanvas({
       }
 
       const sim = simRef.current;
+      const byId = new Map(sim.map((node) => [node.id, node]));
       const selected = selectedRef.current;
       const focus = focusRef.current;
       const hasSearch = focusActiveRef.current;
@@ -449,8 +446,8 @@ function GraphCanvas({
 
       /* Draw edges */
       for (const e of edgesRef.current) {
-        const a = sim.find((n) => n.id === e.source);
-        const b = sim.find((n) => n.id === e.target);
+        const a = byId.get(e.source);
+        const b = byId.get(e.target);
         if (!a || !b) continue;
 
         const touchesSelection = !selected || e.source === selected || e.target === selected;
@@ -788,7 +785,9 @@ function NodesView() {
     if (!token) return;
     let active = true;
 
-    loadGraphData(request, true)
+    loadGraphData(request, (loadedEntities) => {
+      if (active) setEntities(loadedEntities);
+    })
       .then((data) => {
         if (!active) return;
         setEntities(data.entities);
@@ -817,7 +816,7 @@ function NodesView() {
         processed: number;
         failed: number;
       }>("/entities/backfill", { method: "POST" });
-      const data = await loadGraphData(request, false);
+      const data = await loadGraphData(request);
       setEntities(result.entities.length ? result.entities : data.entities);
       setEdges(data.edges);
       setMemories(data.memories);
@@ -835,63 +834,71 @@ function NodesView() {
     }
   }
 
-  const liveEdges = (edges ?? []).filter((e) => !e.validTo);
+  const liveEdges = useMemo(
+    () => (edges ?? []).filter((edge) => !edge.validTo),
+    [edges],
+  );
 
-  const simNodes: SimNode[] = (entities ?? []).map((e) => ({
-    id: e.$id,
-    name: e.name,
-    type: e.type,
-    summary: e.summary,
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    degree: 0,
-  }));
+  const { simNodes, simEdges } = useMemo(() => {
+    const nodes: SimNode[] = (entities ?? []).map((entity) => ({
+      id: entity.$id,
+      name: entity.name,
+      type: entity.type,
+      summary: entity.summary,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      degree: 0,
+    }));
 
-  const entityIds = new Set(simNodes.map((node) => node.id));
-  const simEdgeIndexes = new Map<string, number>();
-  const simEdges: SimEdge[] = [];
-  const addSimEdge = (source: string, target: string, type: string) => {
-    if (source === target) return;
-    const key = [source, target].sort().join(":");
-    const existingIndex = simEdgeIndexes.get(key);
-    if (existingIndex !== undefined) {
-      if (simEdges[existingIndex].type === "co_mentioned" && type !== "co_mentioned") {
-        simEdges[existingIndex] = { source, target, type };
+    const entityIds = new Set(nodes.map((node) => node.id));
+    const simEdgeIndexes = new Map<string, number>();
+    const nextEdges: SimEdge[] = [];
+    const addSimEdge = (source: string, target: string, type: string) => {
+      if (source === target) return;
+      const key = [source, target].sort().join(":");
+      const existingIndex = simEdgeIndexes.get(key);
+      if (existingIndex !== undefined) {
+        if (nextEdges[existingIndex].type === "co_mentioned" && type !== "co_mentioned") {
+          nextEdges[existingIndex] = { source, target, type };
+        }
+        return;
       }
-      return;
-    }
-    simEdgeIndexes.set(key, simEdges.length);
-    simEdges.push({ source, target, type });
-  };
+      simEdgeIndexes.set(key, nextEdges.length);
+      nextEdges.push({ source, target, type });
+    };
 
-  const mentionsByMemory = new Map<string, string[]>();
-  for (const edge of liveEdges) {
-    if (edge.type === "mentioned_in" && entityIds.has(edge.targetId)) {
-      const targets = mentionsByMemory.get(edge.sourceId) ?? [];
-      targets.push(edge.targetId);
-      mentionsByMemory.set(edge.sourceId, targets);
-    } else if (entityIds.has(edge.sourceId) && entityIds.has(edge.targetId)) {
-      addSimEdge(edge.sourceId, edge.targetId, edge.type);
-    }
-  }
-
-  for (const targets of mentionsByMemory.values()) {
-    const uniqueTargets = [...new Set(targets)];
-    for (let i = 0; i < uniqueTargets.length; i++) {
-      for (let j = i + 1; j < uniqueTargets.length; j++) {
-        addSimEdge(uniqueTargets[i], uniqueTargets[j], "co_mentioned");
+    const mentionsByMemory = new Map<string, string[]>();
+    for (const edge of liveEdges) {
+      if (edge.type === "mentioned_in" && entityIds.has(edge.targetId)) {
+        const targets = mentionsByMemory.get(edge.sourceId) ?? [];
+        targets.push(edge.targetId);
+        mentionsByMemory.set(edge.sourceId, targets);
+      } else if (entityIds.has(edge.sourceId) && entityIds.has(edge.targetId)) {
+        addSimEdge(edge.sourceId, edge.targetId, edge.type);
       }
     }
-  }
 
-  for (const edge of simEdges) {
-    const source = simNodes.find((node) => node.id === edge.source);
-    const target = simNodes.find((node) => node.id === edge.target);
-    if (source) source.degree++;
-    if (target) target.degree++;
-  }
+    for (const targets of mentionsByMemory.values()) {
+      const uniqueTargets = [...new Set(targets)];
+      for (let i = 0; i < uniqueTargets.length; i++) {
+        for (let j = i + 1; j < uniqueTargets.length; j++) {
+          addSimEdge(uniqueTargets[i], uniqueTargets[j], "co_mentioned");
+        }
+      }
+    }
+
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    for (const edge of nextEdges) {
+      const source = byId.get(edge.source);
+      const target = byId.get(edge.target);
+      if (source) source.degree++;
+      if (target) target.degree++;
+    }
+
+    return { simNodes: nodes, simEdges: nextEdges };
+  }, [entities, liveEdges]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const focusIds = new Set(
@@ -965,7 +972,8 @@ function NodesView() {
             <h2 className="mt-5 text-[18px] font-semibold text-forest/85">No graph data yet</h2>
             <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-forest/40">
               Save memories that mention tools, projects, people or patterns. Brainfeather will
-              build the graph automatically.
+              build the graph automatically. If a fact was saved from OpenCode before a tool
+              was recognized, rebuild from memories to attach nodes like Xcode.
             </p>
             <button
               type="button"

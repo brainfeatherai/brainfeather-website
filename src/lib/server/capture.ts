@@ -4,10 +4,10 @@ import { secretReason } from './validate.ts';
 import {
   detectMemoryType,
   junkReason,
-  think,
   type Candidate,
   type Decision,
 } from './think.ts';
+import { queueMemoryCandidate } from './candidate-store.ts';
 import { recordCapture, type AgentSession } from './session.ts';
 
 export type CaptureCandidate = {
@@ -17,6 +17,7 @@ export type CaptureCandidate = {
 
 export type CaptureResult = {
   candidates: number;
+  queued: number;
   saved: number;
   duplicates: number;
   rejected: number;
@@ -86,11 +87,14 @@ export async function captureFromActivity(
 ): Promise<CaptureResult> {
   const facts = extractActivityFacts(input.activity);
   const decisions: Decision[] = [];
+  let queued = 0;
+  let duplicates = 0;
 
   for (const fact of facts) {
     if (!CATEGORIES.has(fact.category)) continue;
-    decisions.push(
-      await think(userId, {
+    const result = await queueMemoryCandidate(
+      userId,
+      {
         content: fact.content,
         category: fact.category,
         source: input.source,
@@ -100,19 +104,19 @@ export async function captureFromActivity(
           ...(input.session ? { reference: input.session.id } : {}),
         },
         confidence: 0.7,
-      }),
+      },
+      input.session?.id,
     );
+    if (result.created) queued++;
+    else duplicates++;
   }
-
-  const saved = decisions.filter((decision) => decision.action === 'add').length;
-  const duplicates = decisions.filter((decision) => decision.action === 'duplicate').length;
-  const rejected = decisions.filter((decision) => decision.action === 'reject').length;
 
   return {
     candidates: facts.length,
-    saved,
+    queued,
+    saved: 0,
     duplicates,
-    rejected,
+    rejected: 0,
     decisions,
     ...(input.session
       ? { session: recordCapture(input.session, facts.length) }

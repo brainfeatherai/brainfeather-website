@@ -3,7 +3,8 @@ import { captureFromActivity } from '@/lib/server/capture';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import {
   decodeSession,
-  encodeSession,
+  startSession,
+  tryEncodeSession,
 } from '@/lib/server/session';
 import { readJson, SOURCES, oneOf, str } from '@/lib/server/validate';
 
@@ -31,9 +32,13 @@ async function captureActivity(request: Request) {
     source = parsed.value;
   }
 
+  const rawSessionValue =
+    body.sessionToken !== undefined
+      ? body.sessionToken
+      : request.headers.get('x-brainfeather-session');
   let session;
-  if (body.sessionToken !== undefined) {
-    const parsed = str(body.sessionToken, 'sessionToken', { min: 8, max: 4000 });
+  if (rawSessionValue != null && rawSessionValue !== '') {
+    const parsed = str(rawSessionValue, 'sessionToken', { min: 8, max: 4000 });
     if (!parsed.ok) return fail(400, parsed.error);
     session = decodeSession(parsed.value, auth.userId);
     if (!session) return fail(400, 'sessionToken is invalid.');
@@ -41,6 +46,7 @@ async function captureActivity(request: Request) {
       return fail(400, 'sessionToken belongs to a different project.');
     }
   }
+  if (!session) session = startSession(auth.userId, projectId);
 
   const result = await captureFromActivity(auth.userId, {
     activity: activity.value,
@@ -48,10 +54,15 @@ async function captureActivity(request: Request) {
     source,
     session,
   });
+  const sessionToken = result.session ? tryEncodeSession(result.session) : undefined;
 
   return Response.json({
-    ...result,
-    ...(result.session ? { sessionToken: encodeSession(result.session) } : {}),
+    candidates: result.candidates,
+    queued: result.queued,
+    saved: result.saved,
+    duplicates: result.duplicates,
+    rejected: result.rejected,
+    ...(sessionToken ? { sessionToken } : {}),
   });
 }
 

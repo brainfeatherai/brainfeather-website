@@ -21,20 +21,15 @@ import { memoryEvidence } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import {
   decodeSession,
-  encodeSession,
   markRecalled,
   needsProactiveRecall,
   startSession,
+  tryEncodeSession,
 } from '@/lib/server/session';
 import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
-import type { AgentSession } from '@/lib/server/session';
 
-function signedSession(session: AgentSession): { sessionToken?: string } {
-  try {
-    return { sessionToken: encodeSession(session) };
-  } catch {
-    return {};
-  }
+function signedSession(sessionToken?: string): { sessionToken?: string } {
+  return sessionToken ? { sessionToken } : {};
 }
 
 async function getContext(request: Request) {
@@ -93,6 +88,8 @@ async function getContext(request: Request) {
     referenceAtMs,
   });
 
+  const sessionToken = tryEncodeSession(session);
+
   if (query !== undefined || rawMaxTokens !== null) {
     return Response.json({
       ...compileContext(all, {
@@ -101,8 +98,7 @@ async function getContext(request: Request) {
         asOfMs: referenceAtMs,
         includeEvidence,
       }),
-      session,
-      ...signedSession(session),
+      ...signedSession(sessionToken),
       proactiveRecall: proactive,
     });
   }
@@ -136,8 +132,7 @@ async function getContext(request: Request) {
           },
         }
       : {}),
-    session,
-    ...signedSession(session),
+    ...signedSession(sessionToken),
     proactiveRecall: proactive,
   });
 }

@@ -9,6 +9,7 @@ import {
   needsProactiveRecall,
   recordCapture,
   startSession,
+  tryEncodeSession,
 } from './session.ts';
 
 const SECRET = 'test-session-secret';
@@ -37,6 +38,12 @@ test('signs session tokens so they cannot be swapped across users', () => {
   assert.deepEqual(decodeSession(token, 'user-1', SECRET)?.id, session.id);
   assert.equal(decodeSession(token, 'user-2', SECRET), null);
   assert.equal(decodeSession(token.slice(0, -2) + 'ab', 'user-1', SECRET), null);
+});
+
+test('tryEncodeSession omits the token when signing is not configured', () => {
+  const session = startSession('user-1', 'proj-1');
+  assert.equal(tryEncodeSession(session, ''), undefined);
+  assert.equal(typeof tryEncodeSession(session, SECRET), 'string');
 });
 
 test('rejects session tokens older than 24 hours', () => {

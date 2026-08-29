@@ -59,6 +59,17 @@ export function encodeSession(session: AgentSession, secret = sessionSecret()): 
   return `${payload}.${signature}`;
 }
 
+export function tryEncodeSession(
+  session: AgentSession,
+  secret = sessionSecret(),
+): string | undefined {
+  try {
+    return encodeSession(session, secret);
+  } catch {
+    return undefined;
+  }
+}
+
 export function decodeSession(
   token: string,
   userId: string,

@@ -17,8 +17,26 @@ function mcpConfig(token: string) {
       mcpServers: {
         brainfeather: {
           command: "npx",
-          args: ["-y", "@brainfeather/mcp"],
+          args: ["-y", "@brainfeather/mcp@1.5.0"],
           env: { BRAINFEATHER_API_KEY: token },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function mcpHttpConfig(token: string) {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        brainfeather: {
+          url: "https://brainfeather.com/mcp",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "x-brainfeather-project": "github.com/you/your-repo",
+          },
         },
       },
     },
@@ -188,7 +206,14 @@ function ApiKeysView() {
                           onClick={() => copy(`${key.$id}:config`, mcpConfig(secret))}
                           className={`${ACTION} text-forest/55 hover:border-emerald/35 hover:text-forest`}
                         >
-                          {copied === `${key.$id}:config` ? "Copied" : "Copy MCP config"}
+                          {copied === `${key.$id}:config` ? "Copied" : "Copy stdio MCP"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copy(`${key.$id}:http`, mcpHttpConfig(secret))}
+                          className={`${ACTION} text-forest/55 hover:border-emerald/35 hover:text-forest`}
+                        >
+                          {copied === `${key.$id}:http` ? "Copied" : "Copy HTTP MCP"}
                         </button>
                       </>
                     ) : null}
@@ -210,10 +235,15 @@ function ApiKeysView() {
       <section className="rule-t mt-9 pt-8">
         <h2 className="text-[15px] font-semibold text-forest">Client configuration</h2>
         <p className="mt-1 text-[12px] text-forest/45">
-          Generate a key, then copy its MCP configuration into your client.
+          Pin <code>@brainfeather/mcp@1.5.0</code>, then run{" "}
+          <code>npx -y @brainfeather/mcp@1.5.0 init</code> so recall happens on every
+          prompt. HTTP MCP needs a project id because it has no local workspace.
         </p>
         <pre className="hairline mt-4 overflow-x-auto rounded-lg border bg-paper-dim p-4 font-mono text-[11px] leading-relaxed text-forest/65">
           <code>{mcpConfig("bf_live_…")}</code>
+        </pre>
+        <pre className="hairline mt-3 overflow-x-auto rounded-lg border bg-paper-dim p-4 font-mono text-[11px] leading-relaxed text-forest/65">
+          <code>{mcpHttpConfig("bf_live_…")}</code>
         </pre>
       </section>
     </AppShell>

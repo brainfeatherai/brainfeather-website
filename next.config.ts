@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   /* Drops `X-Powered-By: Next.js`. Minor, but there's no reason to
      hand a scanner the framework name. */
   poweredByHeader: false,
+  serverExternalPackages: ["@modelcontextprotocol/sdk"],
 
   async redirects() {
     return [

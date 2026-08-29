@@ -32,8 +32,10 @@ wiped when the session closes. Brainfeather is the disk beside it.
 
 In early development, and free while it is. Access is invite-only: request one
 from the waitlist on the home page. Approved testers create an account, generate an API key,
-and connect it to an MCP-compatible editor. There is no installable package on
-npm at the time of writing.
+and connect it to an MCP-compatible editor. The published package is
+@brainfeather/mcp on npm. Pin npx -y @brainfeather/mcp@1.5.0, then run
+npx -y @brainfeather/mcp@1.5.0 init so recall is automatic. Hosted Streamable
+HTTP MCP is at https://brainfeather.com/mcp.
 
 ## What it does
 

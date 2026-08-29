@@ -21,7 +21,7 @@ import {
   type SaveDecision,
 } from "@/lib/api-client";
 
-const COMMAND = "npx -y @brainfeather/mcp";
+const COMMAND = "npx -y @brainfeather/mcp@1.5.0";
 
 const CATEGORIES = [
   "preference",

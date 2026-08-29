@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
@@ -214,9 +215,18 @@ function ReviewView() {
       ) : candidates.length === 0 ? (
         error || sessionError ? null : (
           <p className="rounded-xl border border-dashed border-white/[0.10] bg-paper-dim p-6 text-[13px] text-forest/45">
-            {status === "pending"
-              ? "No captured facts waiting for review."
-              : `No ${status} candidates.`}
+            {status === "pending" ? (
+              <>
+                No captured facts waiting for review. Connect a client with{" "}
+                <Link href="/api-keys" className="underline decoration-emerald/40 underline-offset-2">
+                  an API key
+                </Link>{" "}
+                and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.5.1 init</code>
+                . Inferred facts appear here instead of entering recall.
+              </>
+            ) : (
+              `No ${status} candidates.`
+            )}
           </p>
         )
       ) : (

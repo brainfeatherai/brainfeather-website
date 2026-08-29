@@ -105,6 +105,20 @@ export type RequestAnalytics = {
   recent: RequestAnalyticsRow[];
 };
 
+export type OverviewData = {
+  memories: number;
+  entities: number;
+  edges: number;
+  keys: number;
+  pendingCandidates: number;
+  analytics: RequestAnalytics;
+  path?: {
+    recallMs?: number;
+    mcpMs?: number;
+    captureMs?: number;
+  };
+};
+
 export type SaveDecision = {
   action: "add" | "duplicate" | "reject";
   id?: string;

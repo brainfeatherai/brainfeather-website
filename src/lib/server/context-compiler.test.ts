@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compileContext, estimateTokens, type ContextMemory } from './context-compiler.ts';
+import { compileContext, estimateTokens, recallFetchLimit, type ContextMemory } from './context-compiler.ts';
 
 const NOW = Date.parse('2026-08-27T00:00:00Z');
 
@@ -117,4 +117,11 @@ test('returns evidence arrays aligned with selected context only when requested'
   });
   assert.equal(context.evidence?.decisions.length, context.decisions.length);
   assert.equal(context.evidence?.decisions[0], null);
+});
+
+test('hook-sized token budgets fetch a smaller decrypt window', () => {
+  assert.equal(recallFetchLimit(800), 40);
+  assert.equal(recallFetchLimit(1_600), 40);
+  assert.equal(recallFetchLimit(1_601), 100);
+  assert.equal(recallFetchLimit(4_000), 100);
 });

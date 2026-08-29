@@ -30,7 +30,12 @@ export const authService = {
 
   async getCurrentUser() {
     try {
-      return await account.get();
+      return await Promise.race([
+        account.get(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('session-probe-timeout')), 8_000);
+        }),
+      ]);
     } catch {
       return null;
     }

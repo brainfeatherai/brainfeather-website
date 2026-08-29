@@ -112,7 +112,7 @@ export default function Home() {
           <CornerTicks />
 
           {/* ── DIAGRAM ── */}
-          <div id="how" className="rule-t rule-mark mt-20 pt-20">
+          <div id="how" className="rule-t rule-mark mt-20 scroll-mt-28 pt-20">
             {/* the rule breaks around the mark — see .rule-mark */}
             <span
               className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2"
@@ -143,6 +143,39 @@ export default function Home() {
                 solid, and sliding it vertically fought the perspective. */}
             <Reveal variant="scale" delay={120} className="mt-10 overflow-hidden">
               <FlowDiagram />
+            </Reveal>
+
+            <Reveal delay={180} className="mt-12 grid gap-4 sm:grid-cols-3">
+              {[
+                {
+                  step: "Client",
+                  title: "Editor hooks, fail-open",
+                  body: "Recall injects before the prompt. Capture queues after the session. If Brainfeather is slow, the editor continues.",
+                },
+                {
+                  step: "MCP",
+                  title: "stdio or /mcp",
+                  body: "Pin @brainfeather/mcp@1.5.1. Context is compiled on the Singapore API so the model does not wait on a second extraction call.",
+                },
+                {
+                  step: "Dashboard",
+                  title: "Review, then recall",
+                  body: "Inferred facts wait at /review. Approved memories are what the next Cursor, Claude Code, or OpenCode session sees.",
+                },
+              ].map((item) => (
+                <article
+                  key={item.step}
+                  className="hairline rounded-2xl border border-forest/10 bg-paper-dim/70 px-5 py-6"
+                >
+                  <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald">
+                    {item.step}
+                  </p>
+                  <h3 className="mt-3 text-[16px] font-semibold tracking-[-0.02em] text-forest">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2 text-[12.5px] leading-[1.7] text-forest/62">{item.body}</p>
+                </article>
+              ))}
             </Reveal>
           </div>
 

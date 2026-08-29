@@ -40,7 +40,7 @@ function ConnectVisual() {
               {`  `}<span className="text-[#8cc9ff]">&quot;mcpServers&quot;</span>: {`{`}{"\n"}
               {`    `}<span className="text-[#8cc9ff]">&quot;brainfeather&quot;</span>: {`{`}{"\n"}
               {`      `}<span className="text-[#8cc9ff]">&quot;command&quot;</span>: <span className="text-[#f5c56b]">&quot;npx&quot;</span>,{"\n"}
-              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp@1.5.0&quot;</span>]{"\n"}
+              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp@1.5.1&quot;</span>]{"\n"}
               {`    `}{`}`}{"\n"}
               {`  `}{`}`}{"\n"}
               <span className="text-mint">{`}`}</span>
@@ -195,7 +195,7 @@ const FAQ = [
   {
     question: "Does Brainfeather silently remember everything I do?",
     answer:
-      "No. Brainfeather is explicit and selective. Connected agents call the MCP tools to save durable facts, and the memory pipeline filters obvious conversational noise. You can inspect, correct, retract, or delete what was stored.",
+      "No. Brainfeather is explicit and selective. Connected agents call the MCP tools to save durable facts, and the memory pipeline filters obvious conversational noise. Inferred captures wait at /review and never enter recall until you approve them. You can inspect, correct, retract, or delete what was stored.",
   },
   {
     question: "Is it only for coding and project context?",
@@ -267,7 +267,7 @@ const STEPS = [
     number: "01",
     eyebrow: "Connect",
     title: "One setup. Every coding agent remembers.",
-    body: "Add Brainfeather as an MCP server once, then run init so Cursor, Claude Code, and OpenCode recall automatically. Inferred facts wait in a review queue until you approve them.",
+    body: "Add Brainfeather as an MCP server once, then run init so Cursor, Claude Code, and OpenCode recall automatically. Client → MCP → dashboard: inferred facts wait in review until you approve them.",
     Visual: ConnectVisual,
   },
   {
@@ -318,7 +318,10 @@ export default function MemoryJourney() {
               delay={(index % 2) * 90}
               className={`min-w-0 ${index % 2 === 0 ? "lg:border-r lg:border-forest/10" : ""} ${index >= 2 ? "border-t border-forest/10" : index === 1 ? "border-t border-forest/10 lg:border-t-0" : ""}`}
             >
-              <article className="h-full">
+              <article
+                id={eyebrow === "Connect" ? "integrations" : undefined}
+                className="h-full scroll-mt-28"
+              >
                 <Visual />
                 <div className="min-h-[245px] border-t border-forest/10 px-6 py-7 sm:px-9 sm:py-9">
                   <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald">

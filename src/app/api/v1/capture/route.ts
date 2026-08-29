@@ -66,4 +66,6 @@ async function captureActivity(request: Request) {
   });
 }
 
+export const preferredRegion = 'sin1';
+export const runtime = 'nodejs';
 export const POST = withRequestTelemetry('memory.capture', captureActivity);

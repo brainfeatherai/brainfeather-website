@@ -4,6 +4,7 @@ import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { str } from '@/lib/server/validate';
 
 export const runtime = 'nodejs';
+export const preferredRegion = 'sin1';
 export const maxDuration = 30;
 
 function withCors(response: Response) {

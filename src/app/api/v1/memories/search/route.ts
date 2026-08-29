@@ -54,4 +54,6 @@ async function searchMemories(request: Request) {
   return Response.json({ memories: responseMemories, count: memories.length, query: q });
 }
 
+export const preferredRegion = 'sin1';
+export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('memory.search', searchMemories);

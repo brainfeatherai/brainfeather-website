@@ -73,7 +73,7 @@ export default function LoginView({
   inviteEmail: string | null;
   initialError: string | null;
 }) {
-  const { user, loading, login, signup } = useAuth();
+  const { user, loading, login, signup, jwtError } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<"signin" | "signup">(inviteId ? "signup" : "signin");
@@ -82,6 +82,7 @@ export default function LoginView({
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(initialError);
   const [pending, setPending] = useState(false);
+  const banner = error ?? jwtError;
 
   const isSignup = mode === "signup";
 
@@ -247,7 +248,7 @@ export default function LoginView({
                 required
                 autoComplete="email"
                 placeholder="you@company.com"
-                aria-invalid={error ? true : undefined}
+                aria-invalid={banner ? true : undefined}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={FIELD}
@@ -268,7 +269,7 @@ export default function LoginView({
                 placeholder={
                   isSignup ? "Password — 8 or more characters" : "Password"
                 }
-                aria-invalid={error ? true : undefined}
+                aria-invalid={banner ? true : undefined}
                 aria-describedby="auth-note"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -299,10 +300,10 @@ export default function LoginView({
               id="auth-note"
               aria-live="polite"
               className={`min-h-[1.25rem] text-[12px] ${
-                error ? "text-red-700" : "text-forest/45"
+                banner ? "text-red-700" : "text-forest/45"
               }`}
             >
-              {error ?? (isSignup ? "At least 8 characters." : "\u00A0")}
+              {banner ?? (isSignup ? "At least 8 characters." : "\u00A0")}
             </p>
           </form>
 

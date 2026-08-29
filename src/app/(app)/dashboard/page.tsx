@@ -12,6 +12,7 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
@@ -21,7 +22,7 @@ import {
   type SaveDecision,
 } from "@/lib/api-client";
 
-const COMMAND = "npx -y @brainfeather/mcp@1.5.0";
+const COMMAND = "npx -y @brainfeather/mcp@1.5.1";
 
 const CATEGORIES = [
   "preference",
@@ -151,6 +152,7 @@ function Dashboard() {
   const [category, setCategory] =
     useState<(typeof CATEGORIES)[number]>("context");
   const [adding, setAdding] = useState(false);
+  const [pendingReview, setPendingReview] = useState<number | null>(null);
 
   /* Pure fetch; setState happens in the caller so the effect body never
      sets state synchronously (react-hooks/set-state-in-effect). */
@@ -175,10 +177,17 @@ function Dashboard() {
         if (!active) return;
         setError(err instanceof Error ? err.message : "Could not load memories.");
       });
+    request<{ pendingCandidates: number }>("/overview")
+      .then((overview) => {
+        if (active) setPendingReview(overview.pendingCandidates);
+      })
+      .catch(() => {
+        if (active) setPendingReview(null);
+      });
     return () => {
       active = false;
     };
-  }, [token, fetchFacts]);
+  }, [token, fetchFacts, request]);
 
   async function addMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -288,7 +297,7 @@ function Dashboard() {
   return (
     <AppShell
       title="Memories"
-      intro="What Brainfeather currently holds about your work. Retracted facts are hidden."
+      intro="Approved facts currently in recall. Inferred captures wait in the review queue until you accept them."
       wide
     >
       {banner ? (
@@ -306,6 +315,16 @@ function Dashboard() {
           className="hairline mb-6 rounded-xl border bg-white/[0.035] p-4 text-[13px] text-forest/70"
         >
           {notice}
+        </p>
+      ) : null}
+
+      {pendingReview && pendingReview > 0 ? (
+        <p className="hairline mb-6 rounded-xl border border-emerald/25 bg-emerald/10 p-4 text-[13px] text-forest/80">
+          {pendingReview} captured fact{pendingReview === 1 ? "" : "s"} waiting in the{" "}
+          <Link href="/review" className="underline decoration-emerald/40 underline-offset-2">
+            review queue
+          </Link>
+          . They are not in recall yet.
         </p>
       ) : null}
 
@@ -395,8 +414,12 @@ function Dashboard() {
                 Nothing recorded yet
               </h2>
               <p className="mx-auto mt-1.5 max-w-sm text-[14px] text-forest/60">
-                Connect the MCP server in your editor and work normally, or add
-                your first fact above. Durable facts arrive here either way.
+                Add an approved fact above, or connect a client. Inferred captures
+                wait in the{" "}
+                <Link href="/review" className="underline decoration-emerald/40 underline-offset-2">
+                  review queue
+                </Link>{" "}
+                until you accept them.
               </p>
               <code className="hairline mt-5 inline-block rounded-md border bg-paper-dim px-4 py-2 font-mono text-[12px] text-forest/75">
                 {COMMAND}

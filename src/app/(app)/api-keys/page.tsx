@@ -17,7 +17,7 @@ function mcpConfig(token: string) {
       mcpServers: {
         brainfeather: {
           command: "npx",
-          args: ["-y", "@brainfeather/mcp@1.5.0"],
+          args: ["-y", "@brainfeather/mcp@1.5.1"],
           env: { BRAINFEATHER_API_KEY: token },
         },
       },
@@ -235,8 +235,8 @@ function ApiKeysView() {
       <section className="rule-t mt-9 pt-8">
         <h2 className="text-[15px] font-semibold text-forest">Client configuration</h2>
         <p className="mt-1 text-[12px] text-forest/45">
-          Pin <code>@brainfeather/mcp@1.5.0</code>, then run{" "}
-          <code>npx -y @brainfeather/mcp@1.5.0 init</code> so recall happens on every
+          Pin <code>@brainfeather/mcp@1.5.1</code>, then run{" "}
+          <code>npx -y @brainfeather/mcp@1.5.1 init</code> so recall happens on every
           prompt. HTTP MCP needs a project id because it has no local workspace.
         </p>
         <pre className="hairline mt-4 overflow-x-auto rounded-lg border bg-paper-dim p-4 font-mono text-[11px] leading-relaxed text-forest/65">

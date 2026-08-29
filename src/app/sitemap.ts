@@ -19,7 +19,7 @@ import { SITE_URL as SITE } from "@/lib/site";
    disregards; kept because other crawlers still read them and they cost
    nothing. `lastModified` is the field that actually earns a recrawl, so
    it's the one worth keeping honest. */
-const SITE_CHANGED = new Date("2026-08-09"); // icons, JSON-LD, canonicals
+const SITE_CHANGED = new Date("2026-08-29"); // client → MCP → dashboard, hosted /mcp
 const LEGAL_CHANGED = new Date("2026-08-08"); // matches the pages' own "Last updated"
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -35,6 +35,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: SITE_CHANGED,
       changeFrequency: "yearly",
       priority: 0.5,
+    },
+    {
+      url: `${SITE}/llms.txt`,
+      lastModified: SITE_CHANGED,
+      changeFrequency: "weekly",
+      priority: 0.4,
     },
     /* Legal pages are listed deliberately. They're low priority and
        nobody searches for them, but an indexed privacy policy is a

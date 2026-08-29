@@ -390,7 +390,10 @@ export async function listActive(
   } = {},
 ): Promise<MemoryDoc[]> {
   const limit = opts.limit ?? 50;
-  const retrievalWindow = Math.max(limit, 500);
+  /* Fetch a small multiple of `limit`, not a fixed 500. Decrypting hundreds
+     of rows on every recall is what makes context feel slow; ranking still
+     sees more candidates than it returns. */
+  const retrievalWindow = Math.min(500, Math.max(limit * 2, 80));
   const queries = [
     Query.equal('userId', userId),
     Query.orderDesc('$createdAt'),

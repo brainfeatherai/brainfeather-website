@@ -7,6 +7,23 @@ import { useApiSession, type RequestAnalytics } from "@/lib/api-client";
 
 const WINDOWS = [1, 7, 30, 90] as const;
 
+const OPERATION_LABELS: Record<string, string> = {
+  "context.read": "Recall",
+  "mcp.http": "Hosted MCP",
+  "memory.capture": "Capture queue",
+  "memory.search": "Search",
+  "memory.create": "Save",
+  "memory.list": "List memories",
+  "memory_candidate.list": "Review queue",
+  "memory_candidate.approve": "Approve capture",
+  "memory_candidate.reject": "Reject capture",
+  "stats.read": "Stats",
+};
+
+function operationLabel(operation: string) {
+  return OPERATION_LABELS[operation] ?? operation;
+}
+
 function RequestsView() {
   const { token, error: sessionError, request } = useApiSession();
   const [days, setDays] = useState<number>(30);
@@ -43,7 +60,11 @@ function RequestsView() {
   );
 
   return (
-    <AppShell title="Requests" intro="API request history, response status, and latency." wide>
+    <AppShell
+      title="Requests"
+      intro="Latency and status for recall, hosted MCP, and capture — the client path into this dashboard."
+      wide
+    >
       {error ?? sessionError ? (
         <p className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200">{error ?? sessionError}</p>
       ) : null}
@@ -58,7 +79,11 @@ function RequestsView() {
         </div>
         <select value={operation} onChange={(event) => setOperation(event.target.value)} className="h-10 rounded-lg border border-white/[0.08] bg-paper px-3 text-[11px] text-forest/60 outline-none">
           <option value="all">All operations</option>
-          {operations.map((item) => <option key={item} value={item}>{item}</option>)}
+          {operations.map((item) => (
+            <option key={item} value={item}>
+              {operationLabel(item)}
+            </option>
+          ))}
         </select>
         <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-10 rounded-lg border border-white/[0.08] bg-paper px-3 text-[11px] text-forest/60 outline-none">
           <option value="all">All statuses</option>
@@ -99,7 +124,7 @@ function RequestsView() {
                         className="h-2 w-2 rounded-sm"
                         style={{ background: ["#62d5a5", "#60a5fa", "#a78bfa"][index] }}
                       />
-                      <span className="min-w-0 flex-1 truncate font-mono">{item.operation}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono">{operationLabel(item.operation)}</span>
                       <span>{item.count}</span>
                     </div>
                   ))}
@@ -151,7 +176,7 @@ function RequestsView() {
               <ul className="min-w-[760px]">
                 {rows.map((row) => (
                   <li key={row.$id} className="grid grid-cols-[1.25fr_0.75fr_0.55fr_0.7fr_0.9fr] gap-3 border-b border-white/[0.06] px-5 py-3.5 text-[11px] text-forest/50 last:border-b-0">
-                    <span><code className="rounded bg-white/[0.06] px-2 py-1 font-mono text-[10px] text-forest/65">{row.operation}</code></span>
+                    <span><code className="rounded bg-white/[0.06] px-2 py-1 font-mono text-[10px] text-forest/65">{operationLabel(row.operation)}</code></span>
                     <span className="truncate">{row.keyName}</span>
                     <span><code className={`rounded px-2 py-1 font-mono text-[10px] ${row.status < 400 ? "bg-emerald/15 text-emerald" : "bg-red-500/10 text-red-300"}`}>{row.status}</code></span>
                     <span>{row.durationMs} ms</span>

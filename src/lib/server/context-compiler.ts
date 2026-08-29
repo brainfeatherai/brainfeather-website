@@ -35,6 +35,11 @@ export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4) + 4);
 }
 
+/** Hook-sized budgets decrypt fewer rows; explicit tool calls keep the full window. */
+export function recallFetchLimit(maxTokens: number): number {
+  return maxTokens <= 1_600 ? 40 : 100;
+}
+
 export function compileContext<T extends ContextMemory>(
   memories: readonly T[],
   options: { query?: string; maxTokens: number; asOfMs?: number; includeEvidence?: boolean },

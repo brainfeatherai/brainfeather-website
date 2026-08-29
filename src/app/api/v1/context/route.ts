@@ -15,7 +15,7 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { authenticate, fail } from '@/lib/server/api-auth';
-import { compileContext } from '@/lib/server/context-compiler';
+import { compileContext, recallFetchLimit } from '@/lib/server/context-compiler';
 import { listActive } from '@/lib/server/memory-store';
 import { memoryEvidence } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
@@ -30,6 +30,12 @@ import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate'
 
 function signedSession(sessionToken?: string): { sessionToken?: string } {
   return sessionToken ? { sessionToken } : {};
+}
+
+const noStore = { headers: { 'Cache-Control': 'no-store, private' } };
+
+function contextJson(body: object) {
+  return Response.json(body, noStore);
 }
 
 async function getContext(request: Request) {
@@ -84,14 +90,14 @@ async function getContext(request: Request) {
   const all = await listActive(auth.userId, {
     projectId,
     strictScope,
-    limit: 100,
+    limit: recallFetchLimit(maxTokens.value),
     referenceAtMs,
   });
 
   const sessionToken = tryEncodeSession(session);
 
   if (query !== undefined || rawMaxTokens !== null) {
-    return Response.json({
+    return contextJson({
       ...compileContext(all, {
         query,
         maxTokens: maxTokens.value,
@@ -113,7 +119,7 @@ async function getContext(request: Request) {
   const decisions = decisionRows.map((memory) => memory.content);
   const patterns = patternRows.map((memory) => memory.content);
 
-  return Response.json({
+  return contextJson({
     facts,
     decisions,
     patterns,
@@ -137,4 +143,6 @@ async function getContext(request: Request) {
   });
 }
 
+export const preferredRegion = 'sin1';
+export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('context.read', getContext);

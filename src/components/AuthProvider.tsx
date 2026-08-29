@@ -130,6 +130,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       }
       finish();
+    }).catch(() => {
+      setUser(null);
+      finish();
     }).finally(() => {
       window.clearTimeout(timer);
     });

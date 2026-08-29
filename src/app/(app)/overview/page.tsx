@@ -113,7 +113,8 @@ function OverviewView() {
                 <h2 className="text-[15px] font-semibold text-forest">Client → MCP → dashboard</h2>
                 <p className="mt-1 max-w-2xl text-[11px] text-forest/40">
                   Hooks recall before the prompt and queue capture after the session. The dashboard
-                  is the only place inferred facts become memories.
+                  is the only place inferred facts become memories. Timings below are from API-key
+                  client traffic, not dashboard-only use.
                 </p>
               </div>
               {data.pendingCandidates > 0 ? (

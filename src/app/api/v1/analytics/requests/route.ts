@@ -1,6 +1,9 @@
 import { authenticateDashboard, fail } from '@/lib/server/api-auth';
 import { readRequestAnalytics } from '@/lib/server/request-telemetry';
 
+export const preferredRegion = 'sin1';
+export const runtime = 'nodejs';
+
 export async function GET(request: Request) {
   const auth = await authenticateDashboard(request);
   if (!auth.ok) return fail(auth.status, auth.error);

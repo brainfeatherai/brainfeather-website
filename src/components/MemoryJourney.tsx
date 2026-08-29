@@ -195,7 +195,7 @@ const FAQ = [
   {
     question: "Does Brainfeather silently remember everything I do?",
     answer:
-      "No. Brainfeather is explicit and selective. Connected agents call the MCP tools to save durable facts, and the memory pipeline filters obvious conversational noise. You can inspect, correct, retract, or delete what was stored.",
+      "No. Brainfeather is explicit and selective. Connected agents call the MCP tools to save durable facts, and the memory pipeline filters obvious conversational noise. Inferred captures wait at /review and never enter recall until you approve them. You can inspect, correct, retract, or delete what was stored.",
   },
   {
     question: "Is it only for coding and project context?",
@@ -295,7 +295,7 @@ const STEPS = [
 
 export default function MemoryJourney() {
   return (
-    <section id="integrations" className="rule-t mt-24 scroll-mt-28 pt-20">
+    <section className="rule-t mt-24 pt-20">
       <Reveal className="mx-auto max-w-2xl text-center">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald">
           Beyond project memory
@@ -318,7 +318,10 @@ export default function MemoryJourney() {
               delay={(index % 2) * 90}
               className={`min-w-0 ${index % 2 === 0 ? "lg:border-r lg:border-forest/10" : ""} ${index >= 2 ? "border-t border-forest/10" : index === 1 ? "border-t border-forest/10 lg:border-t-0" : ""}`}
             >
-              <article className="h-full">
+              <article
+                id={eyebrow === "Connect" ? "integrations" : undefined}
+                className="h-full scroll-mt-28"
+              >
                 <Visual />
                 <div className="min-h-[245px] border-t border-forest/10 px-6 py-7 sm:px-9 sm:py-9">
                   <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald">

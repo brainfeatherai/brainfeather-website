@@ -414,8 +414,12 @@ function Dashboard() {
                 Nothing recorded yet
               </h2>
               <p className="mx-auto mt-1.5 max-w-sm text-[14px] text-forest/60">
-                Connect the MCP server in your editor and work normally, or add
-                your first fact above. Durable facts arrive here either way.
+                Add an approved fact above, or connect a client. Inferred captures
+                wait in the{" "}
+                <Link href="/review" className="underline decoration-emerald/40 underline-offset-2">
+                  review queue
+                </Link>{" "}
+                until you accept them.
               </p>
               <code className="hairline mt-5 inline-block rounded-md border bg-paper-dim px-4 py-2 font-mono text-[12px] text-forest/75">
                 {COMMAND}

@@ -7,6 +7,7 @@ import {
   COLLECTIONS,
   DATABASE_ID,
 } from '@/lib/server/appwrite-admin';
+import { isMissingCandidatesTable } from '@/lib/server/candidate-store';
 import { deleteWaitlistRequests } from '@/lib/server/waitlist';
 
 async function deleteMatching(collectionId: string, attribute: string, value: string) {
@@ -82,6 +83,9 @@ export async function DELETE(request: Request) {
 
   await Promise.all([
     deleteMatching(COLLECTIONS.memories, 'userId', auth.userId),
+    deleteMatching(COLLECTIONS.memoryCandidates, 'userId', auth.userId).catch((error) => {
+      if (!isMissingCandidatesTable(error)) throw error;
+    }),
     deleteMatching(COLLECTIONS.entities, 'userId', auth.userId),
     deleteMatching(COLLECTIONS.edges, 'userId', auth.userId),
     deleteMatching(COLLECTIONS.apiKeys, 'userId', auth.userId),

@@ -40,7 +40,7 @@ function ConnectVisual() {
               {`  `}<span className="text-[#8cc9ff]">&quot;mcpServers&quot;</span>: {`{`}{"\n"}
               {`    `}<span className="text-[#8cc9ff]">&quot;brainfeather&quot;</span>: {`{`}{"\n"}
               {`      `}<span className="text-[#8cc9ff]">&quot;command&quot;</span>: <span className="text-[#f5c56b]">&quot;npx&quot;</span>,{"\n"}
-              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp&quot;</span>]{"\n"}
+              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp@1.5.0&quot;</span>]{"\n"}
               {`    `}{`}`}{"\n"}
               {`  `}{`}`}{"\n"}
               <span className="text-mint">{`}`}</span>
@@ -267,7 +267,7 @@ const STEPS = [
     number: "01",
     eyebrow: "Connect",
     title: "One setup. Every coding agent remembers.",
-    body: "Add Brainfeather as an MCP server once. Claude Code, Cursor, OpenCode, and your own agents all work from the same durable memory layer.",
+    body: "Add Brainfeather as an MCP server once, then run init so Cursor, Claude Code, and OpenCode recall automatically. Inferred facts wait in a review queue until you approve them.",
     Visual: ConnectVisual,
   },
   {

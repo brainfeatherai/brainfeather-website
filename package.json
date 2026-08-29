@@ -21,6 +21,7 @@
     "eval:retrieval": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-retrieval.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@sentry/nextjs": "^10.71.0",
     "appwrite": "^26.2.0",
     "lucide-react": "^1.28.0",
@@ -29,7 +30,8 @@
     "nodemailer": "9.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -4,6 +4,7 @@ import {
   invalidateMemoryMetadata,
   isFileEvidenceDigest,
   isValidAt,
+  memoryIsRetrievable,
   memoryIsVisibleAt,
   memoryEvidence,
   metadataWithoutEvidenceDigest,
@@ -115,6 +116,48 @@ test('hides active rows before validFrom and after validTo', () => {
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-01-15T00:00:00Z')), false);
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-02-15T00:00:00Z')), true);
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-03-15T00:00:00Z')), false);
+});
+
+test('enforces strict project and temporal retrieval boundaries', () => {
+  const referenceAtMs = Date.parse('2026-02-15T00:00:00Z');
+  const scoped = {
+    status: 'active' as const,
+    $createdAt: CREATED,
+    projectId: 'github.com/acme/api',
+  };
+  assert.equal(
+    memoryIsRetrievable(scoped, {
+      projectId: 'github.com/acme/api',
+      strictScope: true,
+      referenceAtMs,
+    }),
+    true,
+  );
+  assert.equal(
+    memoryIsRetrievable(scoped, {
+      projectId: 'github.com/acme/storefront',
+      strictScope: true,
+      referenceAtMs,
+    }),
+    false,
+  );
+  assert.equal(
+    memoryIsRetrievable(
+      { ...scoped, metadata: JSON.stringify({ vt: '2026-02-01T00:00:00Z' }) },
+      { projectId: scoped.projectId, strictScope: true, referenceAtMs },
+    ),
+    false,
+  );
+});
+
+test('includes unscoped memories only in compatibility scope', () => {
+  const memory = { status: 'active' as const, $createdAt: CREATED };
+  const options = {
+    projectId: 'github.com/acme/api',
+    referenceAtMs: Date.parse('2026-02-15T00:00:00Z'),
+  };
+  assert.equal(memoryIsRetrievable(memory, options), true);
+  assert.equal(memoryIsRetrievable(memory, { ...options, strictScope: true }), false);
 });
 
 test('normalizes compact provenance and temporal keys', () => {

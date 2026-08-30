@@ -21,6 +21,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run eval:retrieval
+      - run: npm run bench:repo-memory
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run build

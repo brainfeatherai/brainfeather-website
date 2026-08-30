@@ -2,11 +2,10 @@ import 'server-only';
 
 import { secretReason } from './validate.ts';
 import {
-  detectMemoryType,
-  junkReason,
   type Candidate,
   type Decision,
 } from './think.ts';
+import { detectMemoryType, junkReason } from './memory-policy.ts';
 import { queueMemoryCandidate } from './candidate-store.ts';
 import { recordCapture, type AgentSession } from './session.ts';
 

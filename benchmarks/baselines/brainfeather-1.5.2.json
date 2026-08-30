@@ -1,0 +1,35 @@
+{
+  "benchmark": "0.1.0",
+  "baseline": "brainfeather-1.5.2",
+  "protected": {
+    "retrieval.hitAtThree": 1,
+    "retrieval.staleRecallRate": 0,
+    "retrieval.crossProjectLeakageRate": 0,
+    "retrieval.contradictionLeakageRate": 0,
+    "writes.junkPrecision": 1,
+    "writes.durableAcceptance": 1,
+    "writes.duplicateAccuracy": 1,
+    "writes.supersessionAccuracy": 1,
+    "temporal.historicalAccuracy": 1,
+    "temporal.currentAccuracy": 1,
+    "context.budgetRespected": true,
+    "context.diversityGroups": 3,
+    "evidence.validFileEvidencePreserved": true,
+    "evidence.malformedDigestRejected": true,
+    "latencyMs.p95UpperBound": 20
+  },
+  "targets": {
+    "retrieval.abstentionAccuracy": {
+      "baseline": 0.6666666666666666,
+      "target": 1
+    },
+    "branchIsolation.leakageRate": {
+      "baseline": 1,
+      "target": 0
+    },
+    "branchIsolation.rankingAccuracy": {
+      "baseline": 0.5,
+      "target": 1
+    }
+  }
+}

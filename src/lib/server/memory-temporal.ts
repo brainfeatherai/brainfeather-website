@@ -28,6 +28,12 @@ export type MemoryProvenance = {
 
 export type MemoryEvidence = MemoryProvenance;
 
+export type MemoryScope = {
+  projectId?: string;
+  branch?: string;
+  taskId?: string;
+};
+
 export function isFileEvidenceDigest(value: unknown): value is string {
   return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
 }
@@ -41,6 +47,8 @@ export type NormalizedMemoryMetadata = {
   confidence: number;
   provenance: MemoryProvenance;
   intendedSupersedes: string[];
+  branch?: string;
+  taskId?: string;
 };
 
 function objectOf(raw?: string): Record<string, unknown> {
@@ -67,6 +75,10 @@ function provenanceValue(value: unknown): unknown {
 function iso(value: unknown): string | undefined {
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return undefined;
   return new Date(value).toISOString();
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 function temporalTypeOf(value: unknown, memoryType: unknown): TemporalType {
@@ -165,6 +177,12 @@ export function normalizeMemoryMetadata(
     intendedSupersedes: Array.isArray(supersedes)
       ? supersedes.filter((id): id is string => typeof id === 'string')
       : [],
+    ...(nonEmptyString(value.branch ?? value.b)
+      ? { branch: nonEmptyString(value.branch ?? value.b)! }
+      : {}),
+    ...(nonEmptyString(value.taskId ?? value.tk)
+      ? { taskId: nonEmptyString(value.taskId ?? value.tk)! }
+      : {}),
   };
 }
 
@@ -172,6 +190,7 @@ const KNOWN_KEYS = new Set([
   'version', 'v', 'memoryType', 'mt', 'confidence', 'c', 'provenance', 'p',
   'intendedSupersedes', 'is', 'observedAt', 'oa', 'validFrom', 'vf',
   'validTo', 'vt', 'invalidatedAt', 'ia', 'temporalType', 'tt',
+  'branch', 'b', 'taskId', 'tk',
 ]);
 
 function compactMetadata(value: Record<string, unknown>): Record<string, unknown> {
@@ -189,6 +208,8 @@ function compactMetadata(value: Record<string, unknown>): Record<string, unknown
   const validTo = value.validTo ?? value.vt;
   const invalidatedAt = value.invalidatedAt ?? value.ia;
   const temporalType = value.temporalType ?? value.tt;
+  const branch = value.branch ?? value.b;
+  const taskId = value.taskId ?? value.tk;
   return {
     ...extra,
     v: 2,
@@ -209,7 +230,39 @@ function compactMetadata(value: Record<string, unknown>): Record<string, unknown
     ...(validTo ? { vt: validTo } : {}),
     ...(invalidatedAt ? { ia: invalidatedAt } : {}),
     ...(temporalType ? { tt: temporalType } : {}),
+    ...(branch ? { b: branch } : {}),
+    ...(taskId ? { tk: taskId } : {}),
   };
+}
+
+export function memoryScopeOf(
+  memory: { projectId?: string | null; branch?: string; taskId?: string; metadata?: string },
+): MemoryScope {
+  const value = objectOf(memory.metadata);
+  const branch = memory.branch ?? nonEmptyString(value.branch ?? value.b);
+  const taskId = memory.taskId ?? nonEmptyString(value.taskId ?? value.tk);
+  return {
+    ...(memory.projectId ? { projectId: memory.projectId } : {}),
+    ...(branch ? { branch } : {}),
+    ...(taskId ? { taskId } : {}),
+  };
+}
+
+export function sameMemoryScope(left: MemoryScope, right: MemoryScope): boolean {
+  return (
+    (left.projectId ?? null) === (right.projectId ?? null) &&
+    left.branch === right.branch &&
+    left.taskId === right.taskId
+  );
+}
+
+export function memoryMatchesScope(
+  memory: MemoryScope,
+  scope: MemoryScope,
+): boolean {
+  if (scope.projectId !== undefined && memory.projectId !== scope.projectId) return false;
+  if (scope.branch === undefined && scope.taskId === undefined) return true;
+  return memory.branch === scope.branch && memory.taskId === scope.taskId;
 }
 
 export function mergeMemoryMetadata(
@@ -264,15 +317,25 @@ export function memoryIsRetrievable(
     metadata?: string;
     $createdAt: string;
     projectId?: string | null;
+    branch?: string;
+    taskId?: string;
   },
   options: {
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     strictScope?: boolean;
     referenceAtMs: number;
   },
 ): boolean {
   if (!memoryIsVisibleAt(memory, options.referenceAtMs)) return false;
   if (!options.projectId) return true;
-  if (memory.projectId === options.projectId) return true;
-  return !options.strictScope && !memory.projectId;
+  const scope = memoryScopeOf(memory);
+  if (scope.projectId !== options.projectId) {
+    return !options.strictScope && !scope.projectId && !scope.branch && !scope.taskId;
+  }
+
+  if (scope.taskId && scope.taskId !== options.taskId) return false;
+  if (scope.branch && scope.branch !== options.branch) return false;
+  return true;
 }

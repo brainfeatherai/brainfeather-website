@@ -21,6 +21,8 @@ export type StoredFact = {
   content: string;
   projectId?: string | null;
   metadata?: string;
+  branch?: string;
+  taskId?: string;
 };
 
 export function junkReason(raw: string): string | null {
@@ -99,14 +101,18 @@ export function planSupersedes(
   existing: readonly StoredFact[],
   opts: {
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     explicitTargetId?: string;
     currentlyValid: boolean;
   },
 ): { doomed: string[]; type: MemoryType; reason: string } | { reject: string } {
   const type = detectMemoryType(content);
   const incoming = tokens(content);
-  const scope = opts.projectId ?? null;
-  const sameScope = (fact: StoredFact) => (fact.projectId ?? null) === scope;
+  const sameScope = (fact: StoredFact) =>
+    (fact.projectId ?? null) === (opts.projectId ?? null) &&
+    fact.branch === opts.branch &&
+    fact.taskId === opts.taskId;
   const doomed = new Set<string>(
     opts.currentlyValid && opts.explicitTargetId ? [opts.explicitTargetId] : [],
   );

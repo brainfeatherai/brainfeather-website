@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import baselineArtifact from '../../../benchmarks/baselines/brainfeather-1.5.2.json' with { type: 'json' };
+import capabilityArtifact from '../../../benchmarks/baselines/branch-task-memory.json' with { type: 'json' };
 import { compileContext, estimateTokens } from '../server/context-compiler.ts';
 import {
   memoryEvidence,
@@ -14,7 +15,7 @@ import {
   type StoredFact,
 } from '../server/memory-policy.ts';
 
-export const REPOMEMBENCH_VERSION = '0.1.0';
+export const REPOMEMBENCH_VERSION = '0.2.0';
 export const BASELINE_RELEASE = 'brainfeather-1.5.2';
 const NOW = Date.parse('2026-08-30T00:00:00.000Z');
 const DAY = 86_400_000;
@@ -26,6 +27,7 @@ export type BenchMemory = StoredFact & {
   status: 'active' | 'invalid';
   metadata?: string;
   branch?: string;
+  taskId?: string;
 };
 
 type RetrievalCase = {
@@ -36,7 +38,8 @@ type RetrievalCase = {
   forbidden?: string[];
   referenceAt?: string;
   branch?: string;
-  capability?: 'current' | 'branch-aware';
+  taskId?: string;
+  capability?: 'current' | 'branch-aware' | 'task-aware';
 };
 
 type BoundaryCase = {
@@ -99,13 +102,21 @@ export type RepoMemBenchReport = {
       target: '100%';
       note: string;
     };
+  };
+  capabilities: {
     branchIsolation: {
-      supported: false;
+      supported: true;
       rankingAccuracy: number;
       rankingTarget: '100%';
       measuredLeakageRate: number;
       target: '0%';
-      note: string;
+    };
+    taskIsolation: {
+      supported: true;
+      rankingAccuracy: number;
+      rankingTarget: '100%';
+      measuredLeakageRate: number;
+      target: '0%';
     };
   };
 };
@@ -129,6 +140,14 @@ const memories: BenchMemory[] = [
   memory('orm-drizzle-main', 'github.com/acme/api', 'decision', 'Database ORM: Drizzle on main.', 18, { branch: 'main' }),
   memory('orm-prisma-branch', 'github.com/acme/api', 'decision', 'Database ORM: Prisma on feature/prisma-migration.', 2, {
     branch: 'feature/prisma-migration',
+  }),
+  memory('task-auth-cookie', 'github.com/acme/api', 'decision', 'Task authentication mechanism: signed cookie.', 2, {
+    branch: 'feature/auth',
+    taskId: 'task-42',
+  }),
+  memory('task-auth-header', 'github.com/acme/api', 'decision', 'Task authentication mechanism: bearer header.', 1, {
+    branch: 'feature/auth',
+    taskId: 'task-99',
   }),
   memory('rollback', 'github.com/acme/api', 'context', 'Deployment 814 was rolled back after authentication failures.', 4),
   memory('procedure-schema', 'github.com/acme/api', 'code', 'Appwrite schema changes require migration, availability polling, verification, then deployment.', 3),
@@ -164,6 +183,16 @@ const retrievalCases: RetrievalCase[] = [
     branch: 'feature/prisma-migration',
     capability: 'branch-aware',
   }),
+  query('task-cookie', 'task authentication mechanism', 'github.com/acme/api', 'task-auth-cookie', ['task-auth-header'], {
+    branch: 'feature/auth',
+    taskId: 'task-42',
+    capability: 'task-aware',
+  }),
+  query('task-header', 'task authentication mechanism', 'github.com/acme/api', 'task-auth-header', ['task-auth-cookie'], {
+    branch: 'feature/auth',
+    taskId: 'task-99',
+    capability: 'task-aware',
+  }),
 ];
 
 const scopeBoundaryCases: BoundaryCase[] = [
@@ -187,6 +216,8 @@ const scopeBoundaryCases: BoundaryCase[] = [
       'rollback',
       'procedure-schema',
       'evidence-file',
+      'task-auth-cookie',
+      'task-auth-header',
     ],
   },
 ];
@@ -258,16 +289,15 @@ function boundedCandidates(item: RetrievalCase): BenchMemory[] {
   return memories.filter((candidate) =>
     memoryIsRetrievable(candidate, {
       projectId: item.projectId,
+      branch: item.branch,
+      taskId: item.taskId,
       strictScope: true,
       referenceAtMs: referenceAtMs(item),
     }),
   );
 }
 
-function rank(item: RetrievalCase, context: { branch?: string } = {}): BenchMemory[] {
-  // Branch is deliberately carried through the query context but not applied in
-  // the 1.5.2 baseline, which only supports repository-level isolation.
-  void context.branch;
+function rank(item: RetrievalCase): BenchMemory[] {
   return rankMemories(boundedCandidates(item), item.query, {
     limit: 8,
     asOfMs: referenceAtMs(item),
@@ -324,18 +354,14 @@ function retrievalMetrics(cases: RetrievalCase[]) {
   };
 }
 
-function branchMetrics() {
-  const cases = retrievalCases.filter((item) => item.capability === 'branch-aware');
+function scopeMetrics(capability: 'branch-aware' | 'task-aware') {
+  const cases = retrievalCases.filter((item) => item.capability === capability);
   let correctRankings = 0;
   let leaks = 0;
   for (const item of cases) {
-    const ranked = rank(item, { branch: item.branch });
+    const ranked = rank(item);
     if (ranked[0]?.$id === item.expected) correctRankings++;
-    if (
-      ranked.some(
-        (candidate) => candidate.branch !== undefined && candidate.branch !== item.branch,
-      )
-    ) {
+    if (boundedCandidates(item).some((candidate) => item.forbidden?.includes(candidate.$id))) {
       leaks++;
     }
   }
@@ -390,7 +416,12 @@ function temporalMetrics() {
 
 function contextMetrics() {
   const candidates = memories.filter(
-    (item) => item.projectId === 'github.com/acme/api' && memoryIsVisibleAt(item, NOW),
+    (item) =>
+      memoryIsRetrievable(item, {
+        projectId: 'github.com/acme/api',
+        strictScope: true,
+        referenceAtMs: NOW,
+      }),
   );
   const maxTokens = 128;
   const compiled = compileContext(candidates, {
@@ -474,12 +505,19 @@ export function runRepoMemBench(options: { iterations?: number } = {}): RepoMemB
         target: '100%',
         note: 'The current ranker can over-match generic terms such as policy. Phase 1 adds calibrated confidence thresholds.',
       },
+    },
+    capabilities: {
       branchIsolation: {
-        supported: false,
-        ...branchMetrics(),
+        supported: true,
+        ...scopeMetrics('branch-aware'),
         rankingTarget: '100%',
         target: '0%',
-        note: 'Brainfeather 1.5.2 scopes by repository, not branch. Phase 1 adds branch overlays.',
+      },
+      taskIsolation: {
+        supported: true,
+        ...scopeMetrics('task-aware'),
+        rankingTarget: '100%',
+        target: '0%',
       },
     },
   };
@@ -509,15 +547,20 @@ export function baselinePasses(report: RepoMemBenchReport): boolean {
   );
 
   return (
-    report.benchmark === baselineArtifact.benchmark &&
-    report.baseline === baselineArtifact.baseline &&
+    report.benchmark === capabilityArtifact.benchmark &&
+    report.baseline === capabilityArtifact.baseline &&
+    capabilityArtifact.extends === 'brainfeather-1.5.2.json' &&
     protectedPass &&
     report.latencyMs.p95 < baselineArtifact.protected['latencyMs.p95UpperBound'] &&
     report.retrieval.abstentionAccuracy >=
       baselineArtifact.targets['retrieval.abstentionAccuracy'].baseline &&
-    report.capabilityGaps.branchIsolation.measuredLeakageRate <=
-      baselineArtifact.targets['branchIsolation.leakageRate'].baseline &&
-    report.capabilityGaps.branchIsolation.rankingAccuracy >=
-      baselineArtifact.targets['branchIsolation.rankingAccuracy'].baseline
+    report.capabilities.branchIsolation.measuredLeakageRate ===
+      capabilityArtifact.protected['branchIsolation.leakageRate'] &&
+    report.capabilities.branchIsolation.rankingAccuracy ===
+      capabilityArtifact.protected['branchIsolation.rankingAccuracy'] &&
+    report.capabilities.taskIsolation.measuredLeakageRate ===
+      capabilityArtifact.protected['taskIsolation.leakageRate'] &&
+    report.capabilities.taskIsolation.rankingAccuracy ===
+      capabilityArtifact.protected['taskIsolation.rankingAccuracy']
   );
 }

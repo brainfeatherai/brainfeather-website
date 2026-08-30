@@ -750,6 +750,22 @@ function DetailPanel({
                     Project · {memory.projectId}
                   </p>
                 ) : null}
+                {memory.branch ? (
+                  <p
+                    title={memory.branch}
+                    className="mt-1 truncate font-mono text-[8px] tracking-[0.08em] text-forest/30"
+                  >
+                    Branch · {memory.branch}
+                  </p>
+                ) : null}
+                {memory.taskId ? (
+                  <p
+                    title={memory.taskId}
+                    className="mt-1 truncate font-mono text-[8px] tracking-[0.08em] text-forest/30"
+                  >
+                    Task · {memory.taskId}
+                  </p>
+                ) : null}
               </li>
             ))}
           </ul>

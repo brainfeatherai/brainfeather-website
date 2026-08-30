@@ -23,6 +23,8 @@ export type MemoryCandidateDoc = {
   content: string;
   title?: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   provenance?: Candidate['provenance'];
   confidence: number;
   status: CandidateStatus;
@@ -72,7 +74,7 @@ function encryptedField(
 
 export function candidateDocumentId(
   userId: string,
-  candidate: Pick<Candidate, 'content' | 'category' | 'source' | 'projectId'>,
+  candidate: Pick<Candidate, 'content' | 'category' | 'source' | 'projectId' | 'branch' | 'taskId'>,
   sessionId?: string,
 ): string {
   return createHash('sha256')
@@ -83,6 +85,8 @@ export function candidateDocumentId(
         candidate.source ?? 'manual',
         candidate.category,
         candidate.projectId ?? '',
+        candidate.branch ?? '',
+        candidate.taskId ?? '',
         candidate.content.replace(/\s+/g, ' ').trim(),
       ].join('\0'),
     )
@@ -108,9 +112,14 @@ export function encodeCandidateDocument(
   const sessionIdEnc = encryptedField(sessionId, userId, documentId, 'sessionId');
   const titleEnc = encryptedField(candidate.title, userId, documentId, 'title');
   const projectIdEnc = encryptedField(candidate.projectId, userId, documentId, 'projectId');
-  const provenanceEnc = candidate.provenance
+  const provenanceEnc = candidate.provenance || candidate.branch || candidate.taskId
     ? encryptedField(
-        JSON.stringify(candidate.provenance),
+        JSON.stringify({
+          v: 2,
+          ...(candidate.provenance ? { p: candidate.provenance } : {}),
+          ...(candidate.branch ? { b: candidate.branch } : {}),
+          ...(candidate.taskId ? { tk: candidate.taskId } : {}),
+        }),
         userId,
         documentId,
         'provenance',
@@ -141,8 +150,12 @@ export function decodeCandidateDocument(row: StoredCandidateDoc): MemoryCandidat
     value
       ? decryptStoredValue(value, fieldContext(row.userId, row.$id, field))
       : undefined;
-  const provenance = decrypt(row.provenance, 'provenance');
+  const rawProvenance = decrypt(row.provenance, 'provenance');
   const decision = decrypt(row.decision, 'decision');
+  const parsedProvenance = rawProvenance
+    ? (JSON.parse(rawProvenance) as Record<string, unknown>)
+    : undefined;
+  const scopedProvenance = parsedProvenance?.v === 2 ? parsedProvenance : undefined;
 
   return {
     ...row,
@@ -150,9 +163,11 @@ export function decodeCandidateDocument(row: StoredCandidateDoc): MemoryCandidat
     content: decrypt(row.content, 'content')!,
     title: decrypt(row.title, 'title'),
     projectId: decrypt(row.projectId, 'projectId'),
-    provenance: provenance
-      ? (JSON.parse(provenance) as Candidate['provenance'])
-      : undefined,
+    branch: typeof scopedProvenance?.b === 'string' ? scopedProvenance.b : undefined,
+    taskId: typeof scopedProvenance?.tk === 'string' ? scopedProvenance.tk : undefined,
+    provenance: scopedProvenance
+      ? (scopedProvenance.p as Candidate['provenance'] | undefined)
+      : (parsedProvenance as Candidate['provenance'] | undefined),
     decision: decision ? (JSON.parse(decision) as Decision) : undefined,
   };
 }

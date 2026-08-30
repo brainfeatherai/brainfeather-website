@@ -26,7 +26,7 @@ import {
   startSession,
   tryEncodeSession,
 } from '@/lib/server/session';
-import { boundedInt, dateTime, str, strictScopeOf } from '@/lib/server/validate';
+import { boundedInt, dateTime, memoryScope, str, strictScopeOf } from '@/lib/server/validate';
 
 function signedSession(sessionToken?: string): { sessionToken?: string } {
   return sessionToken ? { sessionToken } : {};
@@ -44,7 +44,17 @@ async function getContext(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const includeEvidence = params.get('includeEvidence') === 'true';
-  const requestedProjectId = params.get('projectId') ?? undefined;
+  const parsedScope = memoryScope({
+    projectId: params.get('projectId'),
+    branch: params.get('branch'),
+    taskId: params.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const {
+    projectId: requestedProjectId,
+    branch: requestedBranch,
+    taskId: requestedTaskId,
+  } = parsedScope.value;
   const strictScope = strictScopeOf(params);
   let query: string | undefined;
   const rawQuery = params.get('query');
@@ -72,16 +82,20 @@ async function getContext(request: Request) {
     params.get('sessionToken') ?? request.headers.get('x-brainfeather-session');
   let session = rawSession ? decodeSession(rawSession, auth.userId) : null;
   if (rawSession && !session) return fail(400, 'sessionToken is invalid.');
-  if (
-    session?.projectId &&
-    requestedProjectId &&
-    session.projectId !== requestedProjectId
-  ) {
+  if (session && requestedProjectId && session.projectId !== requestedProjectId) {
     return fail(400, 'sessionToken belongs to a different project.');
   }
+  if (session && requestedBranch && session.branch !== requestedBranch) {
+    return fail(400, 'sessionToken belongs to a different branch.');
+  }
+  if (session && requestedTaskId && session.taskId !== requestedTaskId) {
+    return fail(400, 'sessionToken belongs to a different task.');
+  }
   const projectId = requestedProjectId ?? session?.projectId;
+  const branch = requestedBranch ?? session?.branch;
+  const taskId = requestedTaskId ?? session?.taskId;
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
-  if (!session) session = startSession(auth.userId, projectId);
+  if (!session) session = startSession(auth.userId, { projectId, branch, taskId });
   const proactive = needsProactiveRecall(session);
   session = markRecalled(session);
 
@@ -89,6 +103,8 @@ async function getContext(request: Request) {
      precise failure this product claims to prevent. */
   const all = await listActive(auth.userId, {
     projectId,
+    branch,
+    taskId,
     strictScope,
     limit: recallFetchLimit(maxTokens.value),
     referenceAtMs,

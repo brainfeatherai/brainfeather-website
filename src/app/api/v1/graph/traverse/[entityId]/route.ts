@@ -16,6 +16,7 @@ import { authenticate, fail } from '@/lib/server/api-auth';
 import { traverseGraph } from '@/lib/server/memory-store';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
+import { memoryScope } from '@/lib/server/validate';
 
 async function traverseGraphRoute(
   request: Request,
@@ -30,7 +31,13 @@ async function traverseGraphRoute(
   const searchParams = new URL(request.url).searchParams;
   const raw = Number(searchParams.get('depth'));
   const depth = Number.isFinite(raw) && raw >= 1 ? Math.min(Math.floor(raw), 3) : 1;
-  const projectId = searchParams.get('projectId') ?? undefined;
+  const parsedScope = memoryScope({
+    projectId: searchParams.get('projectId'),
+    branch: searchParams.get('branch'),
+    taskId: searchParams.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
   const strictScope = searchParams.get('strictScope') === 'true';
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
 
@@ -42,7 +49,9 @@ async function traverseGraphRoute(
       auth.userId,
       entityId,
       depth,
-      strictScope ? projectId : undefined,
+      (strictScope || branch || taskId) && projectId
+        ? { projectId, branch, taskId }
+        : undefined,
     );
 
     return Response.json({

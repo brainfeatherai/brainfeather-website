@@ -131,10 +131,13 @@ key requires a separate coordinated index migration and must not be done in plac
 
 ## Retrieval evaluation
 
-Encrypted memory search ranks tenant- and project-scoped candidates only after they are
-decrypted inside the server process. Ranking combines BM25 lexical relevance, curated
-related concepts, canonical entity overlap, and bounded recency. Queries and plaintext
-candidate text are not sent to an external search or embedding provider.
+Encrypted memory search ranks tenant- and repository-scoped candidates only after they
+are decrypted inside the server process. Optional `branch` and `taskId` overlays are
+stored in encrypted metadata: repository facts are inherited, branch facts stay on their
+branch, and task facts stay with their task. A task can optionally be constrained to a
+branch. Ranking combines BM25 lexical relevance, curated related concepts, canonical
+entity overlap, and bounded recency. Queries and plaintext candidate text are not sent
+to an external search or embedding provider.
 
 Run the deterministic regression suite with:
 
@@ -165,6 +168,10 @@ fact, when it was valid, its temporal type, confidence, and evidence provenance.
 `referenceAt` query parameter on memory lists, search, and context returns facts valid at
 that point in time. Existing rows remain readable; legacy invalid rows without a reliable
 validity end fail closed in historical queries.
+
+Memory list, search, context, capture, session, consolidation, entity, and graph APIs
+accept optional `branch` and `taskId` scope values alongside `projectId`. Hosted MCP tools
+accept `branch` and `taskId` per call; the repository remains bound to the MCP connection.
 
 `GET /api/v1/context` also accepts an optional `query` and `maxTokens` (256–12,000).
 The context compiler pins the top relevant memory, preserves facts/decisions/patterns

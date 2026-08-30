@@ -80,6 +80,8 @@ export async function captureFromActivity(
   input: {
     activity: string;
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     source?: Candidate['source'];
     session?: AgentSession;
   },
@@ -98,6 +100,8 @@ export async function captureFromActivity(
         category: fact.category,
         source: input.source,
         projectId: input.projectId ?? input.session?.projectId,
+        branch: input.branch ?? input.session?.branch,
+        taskId: input.taskId ?? input.session?.taskId,
         provenance: {
           type: 'agent',
           ...(input.session ? { reference: input.session.id } : {}),

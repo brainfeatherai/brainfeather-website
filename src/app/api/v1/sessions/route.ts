@@ -5,21 +5,18 @@ import {
   encodeSession,
   startSession,
 } from '@/lib/server/session';
-import { readJson, str } from '@/lib/server/validate';
+import { memoryScope, readJson } from '@/lib/server/validate';
 
 async function createSession(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
   const body = (await readJson(request)) ?? {};
-  let projectId: string | undefined;
-  if (body.projectId !== undefined) {
-    const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });
-    if (!parsed.ok) return fail(400, parsed.error);
-    projectId = parsed.value;
-  }
+  const parsedScope = memoryScope(body);
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
 
-  const session = startSession(auth.userId, projectId);
+  const session = startSession(auth.userId, { projectId, branch, taskId });
   return Response.json({
     session,
     token: encodeSession(session),

@@ -6,7 +6,8 @@ import {
 } from '@/lib/server/candidate-store';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { str } from '@/lib/server/validate';
+import { memoryMatchesScope } from '@/lib/server/memory-temporal';
+import { memoryScope } from '@/lib/server/validate';
 
 const STATUSES = new Set<CandidateStatus>(['pending', 'approved', 'rejected']);
 const noStore = { 'Cache-Control': 'no-store, private' };
@@ -20,6 +21,8 @@ function publicCandidate(row: {
   content: string;
   status: CandidateStatus;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   title?: string;
 }) {
   return {
@@ -29,6 +32,8 @@ function publicCandidate(row: {
     content: row.content,
     status: row.status,
     ...(row.projectId ? { projectId: row.projectId } : {}),
+    ...(row.branch ? { branch: row.branch } : {}),
+    ...(row.taskId ? { taskId: row.taskId } : {}),
     ...(row.title ? { title: row.title } : {}),
   };
 }
@@ -51,20 +56,21 @@ async function listCandidates(request: Request) {
     return fail(400, 'limit must be an integer from 1 to 100.');
   }
 
-  let projectId: string | undefined;
-  if (search.get('projectId')) {
-    const parsed = str(search.get('projectId'), 'projectId', { min: 1, max: 64 });
-    if (!parsed.ok) return fail(400, parsed.error);
-    projectId = parsed.value;
-  }
+  const parsedScope = memoryScope({
+    projectId: search.get('projectId'),
+    branch: search.get('branch'),
+    taskId: search.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const scope = parsedScope.value;
 
   try {
     const candidates = await listMemoryCandidates(auth.userId, {
       status: requestedStatus as CandidateStatus,
       limit: rawLimit,
     });
-    const scoped = projectId
-      ? candidates.filter((row) => row.projectId === projectId)
+    const scoped = Object.keys(scope).length
+      ? candidates.filter((row) => memoryMatchesScope(row, scope))
       : candidates;
     return Response.json(
       {

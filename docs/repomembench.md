@@ -4,7 +4,7 @@ RepoMemBench is Brainfeather's deterministic evaluation suite for repository mem
 It measures the memory engine without an LLM judge, external API, vector provider, or
 database, so every pull request can replay exactly the same scenarios.
 
-## v0.1 scope
+## v0.2 scope
 
 The `brainfeather-1.5.2` baseline covers:
 
@@ -17,7 +17,8 @@ The `brainfeather-1.5.2` baseline covers:
 - evidence digest parsing;
 - token-budgeted, category-diverse context compilation;
 - deterministic in-process retrieval latency;
-- branch isolation as an explicit unsupported capability.
+- branch overlays with sibling-branch isolation;
+- task overlays with optional branch constraints and sibling-task isolation.
 
 Run it with:
 
@@ -31,7 +32,9 @@ regresses. Override latency repetitions with `REPOMEMBENCH_ITERATIONS`.
 The machine-readable baseline is stored at
 `benchmarks/baselines/brainfeather-1.5.2.json`. It separates protected metrics
 from explicit improvement targets, so known gaps stay visible without weakening
-regression protection.
+regression protection. RepoMemBench v0.2 extends it with
+`benchmarks/baselines/branch-task-memory.json`, which promotes branch and task
+isolation to protected capabilities without rewriting the historical artifact.
 
 ## v0.1 baseline
 
@@ -46,13 +49,22 @@ regression protection.
 | Branch-specific ranking | 50% | 100% |
 | Write-policy checks | 100% | 100% |
 
-## Why branch isolation is a measured gap
+## v0.2 capabilities
 
-Brainfeather 1.5.2 scopes memories to repositories. A main-branch Drizzle decision
-and a feature-branch Prisma experiment therefore compete in the same candidate set.
-RepoMemBench reports wrong-branch recall separately from top-result accuracy, but
-does not fail CI on the unsupported isolation target yet. Phase 1 will add branch
-overlays and change the target to zero leakage.
+| Metric | Current | Protected target |
+| --- | ---: | ---: |
+| Branch leakage | 0% | 0% |
+| Branch-specific ranking | 100% | 100% |
+| Task leakage | 0% | 0% |
+| Task-specific ranking | 100% | 100% |
+
+## Scope hierarchy
+
+Repository memories are inherited throughout a repository. Branch memories are
+visible only on that branch. Task memories are visible only for that task and can
+optionally be constrained to a branch. Writes may recognize inherited duplicates,
+but supersession and consolidation operate only within the exact repository,
+branch, and task scope.
 
 ## Future adapters
 

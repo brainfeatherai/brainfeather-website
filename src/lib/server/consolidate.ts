@@ -4,6 +4,7 @@ import { think, type Decision } from './think.ts';
 import { jaccardSimilarity } from './memory-policy.ts';
 import type { MemoryDoc } from './memory-store.ts';
 import { listAllActive } from './memory-store.ts';
+import { memoryScopeOf, sameMemoryScope, type MemoryScope } from './memory-temporal.ts';
 
 export type MemoryCluster = {
   ids: string[];
@@ -95,14 +96,23 @@ export function consolidationCommits(opts: { commit?: boolean }): boolean {
 
 export function memoriesByProject(
   memories: readonly MemoryDoc[],
-  projectId?: string,
+  scope: MemoryScope = {},
 ): MemoryDoc[][] {
-  const scoped = projectId
-    ? memories.filter((memory) => memory.projectId === projectId)
+  const scoped = scope.projectId
+    ? memories.filter((memory) =>
+        scope.branch !== undefined || scope.taskId !== undefined
+          ? sameMemoryScope(memory, scope)
+          : memory.projectId === scope.projectId,
+      )
     : [...memories];
   const groups = new Map<string, MemoryDoc[]>();
   for (const memory of scoped) {
-    const key = memory.projectId ?? '';
+    const memoryScope = memoryScopeOf(memory);
+    const key = JSON.stringify([
+      memoryScope.projectId ?? null,
+      memoryScope.branch ?? null,
+      memoryScope.taskId ?? null,
+    ]);
     const group = groups.get(key) ?? [];
     group.push(memory);
     groups.set(key, group);
@@ -112,10 +122,10 @@ export function memoriesByProject(
 
 export async function consolidateProjectMemories(
   userId: string,
-  opts: { projectId?: string; commit?: boolean } = {},
+  opts: MemoryScope & { commit?: boolean } = {},
 ): Promise<{ clusters: MemoryCluster[]; decisions: Decision[] }> {
   const memories = await listAllActive(userId);
-  const clusters = memoriesByProject(memories, opts.projectId).flatMap((group) =>
+  const clusters = memoriesByProject(memories, opts).flatMap((group) =>
     relatedMemoryClusters(group),
   );
   if (!consolidationCommits(opts)) return { clusters, decisions: [] };
@@ -126,7 +136,7 @@ export async function consolidateProjectMemories(
     const rest = cluster.ids.slice(1);
     const current = memories.find((memory) => memory.$id === newest);
     if (!current || rest.length === 0) continue;
-    const clusterProjectId = current.projectId ?? opts.projectId;
+    const clusterScope = memoryScopeOf(current);
     const sameAsNewest =
       cluster.mergedContent === current.content.replace(/\s+/g, ' ').trim();
 
@@ -136,7 +146,7 @@ export async function consolidateProjectMemories(
           await think(userId, {
             content: current.content,
             category: cluster.category,
-            projectId: clusterProjectId,
+            ...clusterScope,
             supersedesId: id,
             provenance: { type: 'agent', reference: `consolidate:${newest}` },
             confidence: 0.85,
@@ -149,7 +159,7 @@ export async function consolidateProjectMemories(
     const first = await think(userId, {
         content: cluster.mergedContent,
         category: cluster.category,
-        projectId: clusterProjectId,
+        ...clusterScope,
         supersedesId: rest[0],
         provenance: { type: 'agent', reference: `consolidate:${newest}` },
         confidence: 0.85,
@@ -162,7 +172,7 @@ export async function consolidateProjectMemories(
         await think(userId, {
           content: cluster.mergedContent,
           category: cluster.category,
-          projectId: clusterProjectId,
+          ...clusterScope,
           supersedesId: id,
           provenance: { type: 'agent', reference: `consolidate:${newest}` },
           confidence: 0.85,

@@ -82,6 +82,37 @@ export function strictScopeOf(params: URLSearchParams): boolean {
   return params.get('strictScope') === 'true';
 }
 
+export function memoryScope(input: {
+  projectId?: unknown;
+  branch?: unknown;
+  taskId?: unknown;
+}):
+  | { ok: true; value: { projectId?: string; branch?: string; taskId?: string } }
+  | { ok: false; error: string } {
+  const values: { projectId?: string; branch?: string; taskId?: string } = {};
+  for (const [field, max] of [
+    ['projectId', 64],
+    ['branch', 128],
+    ['taskId', 128],
+  ] as const) {
+    const raw = input[field];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const parsed = str(raw, field, { min: 1, max });
+    if (!parsed.ok) return parsed;
+    if (!/^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/.test(parsed.value)) {
+      return {
+        ok: false,
+        error: `${field} must use printable ASCII without quotes or backslashes.`,
+      };
+    }
+    values[field] = parsed.value;
+  }
+  if ((values.branch || values.taskId) && !values.projectId) {
+    return { ok: false, error: 'branch and taskId require projectId.' };
+  }
+  return { ok: true, value: values };
+}
+
 export function dateTime(
   value: unknown,
   field: string,

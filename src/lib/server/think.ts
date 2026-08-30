@@ -39,6 +39,7 @@ export {
 } from './memory-policy.ts';
 import {
   mergeMemoryMetadata,
+  sameMemoryScope,
   type MemoryProvenance,
   type TemporalType,
 } from './memory-temporal.ts';
@@ -58,6 +59,8 @@ export type Candidate = {
   source?: string;
   title?: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   supersedesId?: string;
   observedAt?: string;
   validFrom?: string;
@@ -125,10 +128,10 @@ async function finishSupersession(
   userId: string,
   replacementId: string,
   targetIds: string[],
-  projectId?: string,
+  scope: Pick<Candidate, 'projectId' | 'branch' | 'taskId'>,
 ): Promise<void> {
   const targets = (
-    await Promise.all(targetIds.map((id) => getMemory(userId, id, projectId)))
+    await Promise.all(targetIds.map((id) => getMemory(userId, id, scope)))
   ).filter((memory): memory is NonNullable<typeof memory> => memory !== null);
 
   if (targets.length !== targetIds.length) {
@@ -189,13 +192,18 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
      contradiction detection both read from here, so both were affected. */
   const existing = await listActive(userId, {
     projectId: cand.projectId,
+    branch: cand.branch,
+    taskId: cand.taskId,
     strictScope: cand.projectId !== undefined,
     limit: 100,
   });
 
   // 1 + 2. Duplicates, before the junk filter (see header note).
   if (currentlyValid) {
-    const dup = findDuplicate(content, existing, cand.supersedesId);
+    const duplicatePool = cand.supersedesId
+      ? existing.filter((memory) => sameMemoryScope(memory, cand))
+      : existing;
+    const dup = findDuplicate(content, duplicatePool, cand.supersedesId);
     if (dup) {
       if (cand.supersedesId === dup.$id) {
         return { action: 'reject', reason: 'a memory cannot supersede itself' };
@@ -203,7 +211,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
       const intended = new Set(metadataOf(dup).intendedSupersedes ?? []);
       if (cand.supersedesId) intended.add(cand.supersedesId);
       if (intended.size) {
-        await finishSupersession(userId, dup.$id, [...intended], cand.projectId);
+        await finishSupersession(userId, dup.$id, [...intended], cand);
       }
       await enrichMemoryBestEffort(userId, dup.$id, dup.content);
       return { action: 'duplicate', id: dup.$id };
@@ -214,7 +222,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
      committed but its HTTP response was lost, a safe retry sees the new
      fact as a duplicate even though the original target is now inactive. */
   const explicitTarget = cand.supersedesId
-    ? await getMemory(userId, cand.supersedesId, cand.projectId)
+    ? await getMemory(userId, cand.supersedesId, cand)
     : undefined;
   if (cand.supersedesId && !explicitTarget) {
     return { action: 'reject', reason: 'supersedesId is not an active memory in this project' };
@@ -230,6 +238,8 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   // 4. What does this replace?
   const planned = planSupersedes(content, existing, {
     projectId: cand.projectId,
+    branch: cand.branch,
+    taskId: cand.taskId,
     explicitTargetId: currentlyValid ? explicitTarget?.$id : undefined,
     currentlyValid,
   });
@@ -250,6 +260,8 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
       validFrom,
       ...(cand.validTo ? { validTo: cand.validTo } : {}),
       temporalType: cand.temporalType ?? temporalTypeFor(type),
+      ...(cand.branch ? { branch: cand.branch } : {}),
+      ...(cand.taskId ? { taskId: cand.taskId } : {}),
     }),
     supersedeIds: doomed,
   });
@@ -259,7 +271,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   if (currentlyValid) await enrichMemoryBestEffort(userId, created.$id, content);
 
   if (doomed.length) {
-    await finishSupersession(userId, created.$id, doomed, cand.projectId);
+    await finishSupersession(userId, created.$id, doomed, cand);
   }
 
   return { action: 'add', id: created.$id, invalidated: doomed, reason };

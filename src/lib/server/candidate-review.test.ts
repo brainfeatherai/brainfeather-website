@@ -18,6 +18,8 @@ test('maps a stored candidate onto the think() input without activating it', () 
     category: 'decision',
     content: 'We decided to store sessions as signed tokens.',
     projectId: 'proj-1',
+    branch: 'feature/auth',
+    taskId: 'task-42',
     provenance: { type: 'agent', reference: 'session-1' },
     confidence: 0.7,
     status: 'pending',
@@ -29,6 +31,8 @@ test('maps a stored candidate onto the think() input without activating it', () 
     source: 'cursor',
     title: undefined,
     projectId: 'proj-1',
+    branch: 'feature/auth',
+    taskId: 'task-42',
     provenance: { type: 'agent', reference: 'session-1' },
     confidence: 0.7,
   });

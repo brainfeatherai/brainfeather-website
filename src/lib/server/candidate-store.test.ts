@@ -36,12 +36,22 @@ test('candidate document ids are stable and scoped to user, session, and content
     category: 'code',
     source: 'cursor',
     projectId: 'proj-1',
+    branch: 'feature/auth',
+    taskId: 'task-42',
   };
   const first = candidateDocumentId('user-1', candidate, 'session-1');
   assert.equal(first, candidateDocumentId('user-1', candidate, 'session-1'));
   assert.equal(first.length, 36);
   assert.notEqual(first, candidateDocumentId('user-2', candidate, 'session-1'));
   assert.notEqual(first, candidateDocumentId('user-1', candidate, 'session-2'));
+  assert.notEqual(
+    first,
+    candidateDocumentId('user-1', { ...candidate, branch: 'feature/other' }, 'session-1'),
+  );
+  assert.notEqual(
+    first,
+    candidateDocumentId('user-1', { ...candidate, taskId: 'task-99' }, 'session-1'),
+  );
   assert.notEqual(
     first,
     candidateDocumentId('user-1', { ...candidate, content: 'This project uses Jest.' }, 'session-1'),
@@ -58,6 +68,8 @@ test('round-trips encrypted candidate documents without leaking plaintext fields
       source: 'cursor',
       title: 'Testing',
       projectId: 'proj-1',
+      branch: 'feature/auth',
+      taskId: 'task-42',
       provenance: { type: 'agent', reference: 'session-1' },
       confidence: 0.7,
     },
@@ -71,6 +83,7 @@ test('round-trips encrypted candidate documents without leaking plaintext fields
   assert.notEqual(encoded.title, 'Testing');
   assert.notEqual(encoded.projectId, 'proj-1');
   assert.notEqual(encoded.sessionId, 'session-1');
+  assert.ok((encoded.provenance?.length ?? 0) <= 768);
 
   const decoded = decodeCandidateDocument({
     $id: 'candidate-1',
@@ -91,7 +104,27 @@ test('round-trips encrypted candidate documents without leaking plaintext fields
   assert.equal(decoded.content, 'This project uses Vitest.');
   assert.equal(decoded.title, 'Testing');
   assert.equal(decoded.projectId, 'proj-1');
+  assert.equal(decoded.branch, 'feature/auth');
+  assert.equal(decoded.taskId, 'task-42');
   assert.equal(decoded.sessionId, 'session-1');
   assert.equal(decoded.provenance?.type, 'agent');
   assert.equal(decoded.provenance?.reference, 'session-1');
+});
+
+test('fits maximum validated scope and provenance in the candidate envelope', () => {
+  const encoded = encodeCandidateDocument('user-1', 'candidate-max', {
+    content: 'This project uses Vitest for unit tests.',
+    category: 'code',
+    projectId: 'p'.repeat(64),
+    branch: 'b'.repeat(128),
+    taskId: 't'.repeat(128),
+    provenance: {
+      type: 'file',
+      reference: 'r'.repeat(128),
+      digest: `sha256:${'a'.repeat(64)}`,
+    },
+  });
+
+  assert.ok((encoded.projectId?.length ?? 0) <= 256);
+  assert.ok((encoded.provenance?.length ?? 0) <= 768);
 });

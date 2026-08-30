@@ -6,6 +6,8 @@ export type AgentSession = {
   id: string;
   userId: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   startedAt: string;
   recalledAt?: string;
   captureCount: number;
@@ -22,12 +24,18 @@ function sessionSecret(): string {
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function startSession(userId: string, projectId?: string, now = new Date()): AgentSession {
+export function startSession(
+  userId: string,
+  scope: { projectId?: string; branch?: string; taskId?: string } = {},
+  now = new Date(),
+): AgentSession {
   const startedAt = now.toISOString();
   return {
     id: randomUUID(),
     userId,
-    ...(projectId ? { projectId } : {}),
+    ...(scope.projectId ? { projectId: scope.projectId } : {}),
+    ...(scope.branch ? { branch: scope.branch } : {}),
+    ...(scope.taskId ? { taskId: scope.taskId } : {}),
     startedAt,
     captureCount: 0,
     lastActivityAt: startedAt,
@@ -92,6 +100,9 @@ export function decodeSession(
       session.userId !== userId ||
       typeof session.startedAt !== 'string' ||
       typeof session.captureCount !== 'number' ||
+      (session.projectId !== undefined && typeof session.projectId !== 'string') ||
+      (session.branch !== undefined && typeof session.branch !== 'string') ||
+      (session.taskId !== undefined && typeof session.taskId !== 'string') ||
       !Number.isFinite(Date.parse(session.startedAt)) ||
       Date.now() - Date.parse(session.startedAt) > SESSION_TTL_MS
     ) {

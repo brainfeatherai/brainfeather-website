@@ -151,6 +151,8 @@ test('fits worst-case validated values in the documented columns', () => {
       vt: '2026-09-27T00:00:00.000Z',
       ia: '2026-09-27T00:00:00.000Z',
       tt: 'decision',
+      b: 'b'.repeat(128),
+      tk: 't'.repeat(128),
     }),
     p: 'p'.repeat(64),
   }), {
@@ -166,6 +168,6 @@ test('fits worst-case validated values in the documented columns', () => {
 
   assert.ok(memoryContent.length <= 11000);
   assert.ok(memoryTitle.length <= 1024);
-  assert.ok(memoryMetadata.length <= 3000);
+  assert.ok(memoryMetadata.length <= 4096);
   assert.ok(entitySummary.length <= 3000);
 });

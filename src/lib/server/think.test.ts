@@ -101,3 +101,35 @@ test('does not treat another project as a contradiction target', () => {
   if ('reject' in planned) return;
   assert.deepEqual(planned.doomed, []);
 });
+
+test('plans supersession only within the exact branch and task scope', () => {
+  const existing = [
+    {
+      $id: 'same-scope',
+      content: 'Backend: Express.',
+      projectId: 'p1',
+      branch: 'feature/api',
+      taskId: 'task-42',
+    },
+    {
+      $id: 'repository-default',
+      content: 'Backend: Rails.',
+      projectId: 'p1',
+    },
+    {
+      $id: 'sibling-branch',
+      content: 'Backend: Hono.',
+      projectId: 'p1',
+      branch: 'feature/other',
+      taskId: 'task-42',
+    },
+  ];
+  const result = planSupersedes('Backend: Fastify with TypeScript.', existing, {
+    projectId: 'p1',
+    branch: 'feature/api',
+    taskId: 'task-42',
+    currentlyValid: true,
+  });
+  assert.ok(!('reject' in result));
+  assert.deepEqual(result.doomed, ['same-scope']);
+});

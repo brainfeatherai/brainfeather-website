@@ -45,6 +45,8 @@ export type Fact = {
   category: string;
   status: "active" | "invalid";
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   temporal?: {
     observedAt: string;
     validFrom: string;
@@ -134,6 +136,8 @@ export type MemoryCandidate = {
   content: string;
   category: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   confidence: number;
   status: "pending" | "approved" | "rejected";
 };

@@ -11,14 +11,20 @@ import { authenticate, fail } from '@/lib/server/api-auth';
 import { searchWithMeta } from '@/lib/server/memory-store';
 import { memoryEvidence, metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { CATEGORIES, dateTime, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
+import { CATEGORIES, dateTime, limitOf, memoryScope, oneOf, strictScopeOf } from '@/lib/server/validate';
 
 async function searchMemories(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
   const params = new URL(request.url).searchParams;
-  const projectId = params.get('projectId') ?? undefined;
+  const parsedScope = memoryScope({
+    projectId: params.get('projectId'),
+    branch: params.get('branch'),
+    taskId: params.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
   const strictScope = strictScopeOf(params);
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   const q = params.get('q') ?? params.get('query');
@@ -40,6 +46,8 @@ async function searchMemories(request: Request) {
   const result = await searchWithMeta(auth.userId, q, {
     category: rawCategory ?? undefined,
     projectId,
+    branch,
+    taskId,
     strictScope,
     limit: limitOf(params.get('limit'), 10, 25),
     referenceAtMs,

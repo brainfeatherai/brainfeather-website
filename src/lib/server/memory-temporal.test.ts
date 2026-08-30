@@ -5,6 +5,8 @@ import {
   isFileEvidenceDigest,
   isValidAt,
   memoryIsRetrievable,
+  memoryMatchesScope,
+  memoryScopeOf,
   memoryIsVisibleAt,
   memoryEvidence,
   metadataWithoutEvidenceDigest,
@@ -158,6 +160,68 @@ test('includes unscoped memories only in compatibility scope', () => {
   };
   assert.equal(memoryIsRetrievable(memory, options), true);
   assert.equal(memoryIsRetrievable(memory, { ...options, strictScope: true }), false);
+});
+
+test('applies repository, branch, and task scopes as hierarchical overlays', () => {
+  const referenceAtMs = Date.parse('2026-02-15T00:00:00Z');
+  const options = {
+    projectId: 'github.com/acme/api',
+    branch: 'feature/auth',
+    taskId: 'task-42',
+    strictScope: true,
+    referenceAtMs,
+  };
+  const row = (metadata?: Record<string, string>) => ({
+    status: 'active' as const,
+    $createdAt: CREATED,
+    projectId: options.projectId,
+    metadata: metadata ? JSON.stringify(metadata) : undefined,
+  });
+
+  assert.equal(memoryIsRetrievable(row(), options), true);
+  assert.equal(memoryIsRetrievable(row({ b: options.branch }), options), true);
+  assert.equal(memoryIsRetrievable(row({ tk: options.taskId }), options), true);
+  assert.equal(
+    memoryIsRetrievable(row({ b: options.branch, tk: options.taskId }), options),
+    true,
+  );
+  assert.equal(memoryIsRetrievable(row({ b: 'feature/other' }), options), false);
+  assert.equal(memoryIsRetrievable(row({ tk: 'task-99' }), options), false);
+  assert.equal(
+    memoryIsRetrievable(row({ b: 'feature/other', tk: options.taskId }), options),
+    false,
+  );
+});
+
+test('normalizes compact branch and task scope metadata', () => {
+  const raw = mergeMemoryMetadata(undefined, {
+    branch: 'feature/auth',
+    taskId: 'task-42',
+  });
+  assert.deepEqual(memoryScopeOf({ projectId: 'repo', metadata: raw }), {
+    projectId: 'repo',
+    branch: 'feature/auth',
+    taskId: 'task-42',
+  });
+  assert.deepEqual(
+    {
+      branch: normalizeMemoryMetadata(raw, CREATED).branch,
+      taskId: normalizeMemoryMetadata(raw, CREATED).taskId,
+    },
+    { branch: 'feature/auth', taskId: 'task-42' },
+  );
+});
+
+test('keeps repository compatibility lookups broad but overlay lookups exact', () => {
+  const repository = { projectId: 'repo' };
+  const branch = { projectId: 'repo', branch: 'feature/auth' };
+  const branchTask = { ...branch, taskId: 'task-42' };
+
+  assert.equal(memoryMatchesScope(branchTask, repository), true);
+  assert.equal(memoryMatchesScope(branchTask, branch), false);
+  assert.equal(memoryMatchesScope(branch, branch), true);
+  assert.equal(memoryMatchesScope(branchTask, branchTask), true);
+  assert.equal(memoryMatchesScope({ projectId: 'other' }, repository), false);
 });
 
 test('normalizes compact provenance and temporal keys', () => {

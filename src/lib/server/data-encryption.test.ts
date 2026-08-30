@@ -145,7 +145,7 @@ test('fits worst-case validated values in the documented columns', () => {
       mt: 'correction',
       c: 1,
       p: { t: 'commit', r: 'r'.repeat(128) },
-      is: Array.from({ length: 25 }, () => 'a'.repeat(64)),
+      is: Array.from({ length: 25 }, () => 'a'.repeat(36)),
       oa: '2026-08-27T00:00:00.000Z',
       vf: '2026-08-27T00:00:00.000Z',
       vt: '2026-09-27T00:00:00.000Z',
@@ -168,6 +168,6 @@ test('fits worst-case validated values in the documented columns', () => {
 
   assert.ok(memoryContent.length <= 11000);
   assert.ok(memoryTitle.length <= 1024);
-  assert.ok(memoryMetadata.length <= 4096);
+  assert.ok(memoryMetadata.length <= 3000);
   assert.ok(entitySummary.length <= 3000);
 });

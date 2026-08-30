@@ -52,7 +52,7 @@ const collections: Resource[] = [
       { key: 'status', type: 'enum', required: true, elements: ['active', 'invalid'] },
       { key: 'supersededBy', type: 'string', minSize: 64 },
       { key: 'projectId', type: 'string', minSize: 64 },
-      { key: 'metadata', type: 'string', minSize: 4096 },
+      { key: 'metadata', type: 'string', minSize: 3000 },
     ],
     indexes: [
       { columns: ['userId', 'status'] },

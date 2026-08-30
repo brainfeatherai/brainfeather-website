@@ -290,7 +290,7 @@ async function ensureCoreCollections(databases: Databases) {
       await (databases.updateEnumAttribute as unknown as (input: typeof params) => Promise<unknown>)(params);
     }
   }
-  for (const [key, size] of [['content', 11000], ['title', 1024], ['metadata', 4096]] as const) {
+  for (const [key, size] of [['content', 11000], ['title', 1024], ['metadata', 3000]] as const) {
     const attribute = byKey.get(key);
     if (attribute && 'size' in attribute && attribute.size < size) {
       const params = {

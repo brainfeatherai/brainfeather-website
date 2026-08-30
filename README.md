@@ -109,7 +109,7 @@ waitlist throttling stores only an HMAC bucket, never the raw network address.
 Use three rollout states:
 
 1. Increase Appwrite string capacities before deploying encrypted writes:
-   `memories.content=11000`, `memories.title=1024`, `memories.metadata=4096`, and
+   `memories.content=11000`, `memories.title=1024`, `memories.metadata=3000`, and
    `entities.summary=3000`.
 2. Generate two independent 32-byte secrets. Set
    `BRAINFEATHER_DATA_ENCRYPTION_KEYS=v1:<base64url-key>`,

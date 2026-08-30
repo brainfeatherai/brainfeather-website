@@ -3,7 +3,10 @@ const BASE64URL_32 = /^[A-Za-z0-9_-]{43}$/;
 export function validateProductionConfiguration(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (env.NODE_ENV !== 'production') return;
+  const productionDeployment =
+    env.VERCEL_ENV === 'production' ||
+    (env.NODE_ENV === 'production' && env.VERCEL !== '1');
+  if (!productionDeployment) return;
 
   const errors: string[] = [];
   if (env.BRAINFEATHER_DATA_ENCRYPTION !== 'encrypted') {

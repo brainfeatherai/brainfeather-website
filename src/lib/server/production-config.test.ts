@@ -8,6 +8,16 @@ test('allows development without production storage credentials', () => {
   assert.doesNotThrow(() => validateProductionConfiguration({ NODE_ENV: 'development' }));
 });
 
+test('allows Vercel preview builds while runtime storage remains fail-closed', () => {
+  assert.doesNotThrow(() =>
+    validateProductionConfiguration({
+      NODE_ENV: 'production',
+      VERCEL: '1',
+      VERCEL_ENV: 'preview',
+    }),
+  );
+});
+
 test('rejects production storage modes that can write plaintext', () => {
   assert.throws(
     () => validateProductionConfiguration({ NODE_ENV: 'production' }),

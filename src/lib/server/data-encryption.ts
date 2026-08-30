@@ -101,7 +101,13 @@ function additionalData(keyId: string, context: EncryptionContext): Buffer {
 }
 
 export function dataEncryptionMode(): DataEncryptionMode {
-  const mode = process.env.BRAINFEATHER_DATA_ENCRYPTION?.trim() || 'plaintext';
+  const configured = process.env.BRAINFEATHER_DATA_ENCRYPTION?.trim();
+  if (!configured && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '[brainfeather] BRAINFEATHER_DATA_ENCRYPTION must be explicit in production runtimes.',
+    );
+  }
+  const mode = configured || 'plaintext';
   if (mode !== 'plaintext' && mode !== 'compatibility' && mode !== 'encrypted') {
     throw new Error(
       '[brainfeather] BRAINFEATHER_DATA_ENCRYPTION must be plaintext, compatibility, or encrypted.',

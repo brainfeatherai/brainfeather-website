@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  apiKeyHashWritesEnabled,
   apiKeyDigest,
   apiKeyHint,
   apiKeySlotId,
@@ -10,6 +11,17 @@ import {
   legacyStoredApiKey,
   storedApiKey,
 } from './api-key.ts';
+
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+const ORIGINAL_STORAGE_MODE = process.env.BRAINFEATHER_API_KEY_STORAGE;
+const mutableEnv = process.env as Record<string, string | undefined>;
+
+test.after(() => {
+  if (ORIGINAL_NODE_ENV === undefined) delete mutableEnv.NODE_ENV;
+  else mutableEnv.NODE_ENV = ORIGINAL_NODE_ENV;
+  if (ORIGINAL_STORAGE_MODE === undefined) delete process.env.BRAINFEATHER_API_KEY_STORAGE;
+  else process.env.BRAINFEATHER_API_KEY_STORAGE = ORIGINAL_STORAGE_MODE;
+});
 
 test('creates high-entropy Brainfeather tokens', () => {
   const first = createApiKey();
@@ -54,4 +66,10 @@ test('recognizes current and historical token formats', () => {
   assert.equal(isBrainfeatherApiKey('bf_live_short'), false);
   assert.equal(isBrainfeatherApiKey('not-a-key'), false);
   assert.equal(apiKeyHint(storedApiKey('bf_1234567890abcdef')), 'bf_...cdef');
+});
+
+test('defaults production API-key writes to hashed storage', () => {
+  mutableEnv.NODE_ENV = 'production';
+  delete process.env.BRAINFEATHER_API_KEY_STORAGE;
+  assert.equal(apiKeyHashWritesEnabled(), true);
 });

@@ -7,7 +7,7 @@ import {
   legacyStoredApiKey,
   storedApiKey,
 } from '@/lib/api-key';
-import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
+import { adminDb, adminUsers, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
 import { hasProfile, isApprovedEmail } from './access-control';
 
 export type AuthResult =
@@ -19,7 +19,7 @@ export type AuthResult =
       email?: string;
       name?: string;
     }
-  | { ok: false; status: 401 | 403; error: string };
+  | { ok: false; status: 401 | 403 | 503; error: string };
 
 /* Telemetry wrappers and route handlers both need the auth result. Cache
    it by Request object so wrapping a route never repeats token hashing,
@@ -74,14 +74,21 @@ async function authenticateApiKey(token: string): Promise<AuthResult> {
       }
     }
   } catch {
-    return { ok: false, status: 403, error: 'Could not verify token.' };
+    return { ok: false, status: 503, error: 'Token verification is temporarily unavailable.' };
   }
 
   const row = found.documents[0];
   if (!row) return { ok: false, status: 401, error: 'Invalid or revoked token.' };
 
-  void adminDb
-    .updateDocument(DATABASE_ID, COLLECTIONS.apiKeys, row.$id, {
+  try {
+    await adminUsers.get({ userId: row.userId as string });
+  } catch (error) {
+    return (error as { code?: number }).code === 404
+      ? { ok: false, status: 401, error: 'Invalid or revoked token.' }
+      : { ok: false, status: 503, error: 'Token verification is temporarily unavailable.' };
+  }
+
+  await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.apiKeys, row.$id, {
       lastUsedAt: new Date().toISOString(),
     })
     .catch(() => {});
@@ -101,11 +108,19 @@ async function authenticateJwt(token: string): Promise<AuthResult> {
     return { ok: false, status: 403, error: 'Dashboard authentication is unavailable.' };
   }
 
+  let user;
   try {
     const account = new Account(
       new Client().setEndpoint(endpoint).setProject(project).setJWT(token),
     );
-    const user = await account.get();
+    user = await account.get();
+  } catch (error) {
+    return (error as { code?: number }).code === 401
+      ? { ok: false, status: 401, error: 'Invalid or expired dashboard session.' }
+      : { ok: false, status: 503, error: 'Dashboard authentication is temporarily unavailable.' };
+  }
+
+  try {
     const approved = (await hasProfile(user.$id)) || (await isApprovedEmail(user.email));
     if (!approved) {
       return {
@@ -122,7 +137,7 @@ async function authenticateJwt(token: string): Promise<AuthResult> {
       name: user.name,
     };
   } catch {
-    return { ok: false, status: 401, error: 'Invalid or expired dashboard session.' };
+    return { ok: false, status: 503, error: 'Dashboard access checks are temporarily unavailable.' };
   }
 }
 

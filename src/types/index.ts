@@ -135,8 +135,7 @@ export interface Entity {
 
 /* An edge joins a memory to an entity ('mentioned_in') or two entities.
    `validTo` set means superseded — reads must filter it, same rule as
-   memories.status. Weight is stored as an integer 0-10 because Appwrite
-   has no double attribute type. */
+   memories.status. The API normalizes the stored integer to a 0-1 weight. */
 export interface GraphEdge {
   $id: string;
   userId: string;

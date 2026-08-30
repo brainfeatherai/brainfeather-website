@@ -16,8 +16,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --conditions=react-server --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/lib/api-key.test.ts src/lib/server/context-compiler.test.ts src/lib/server/data-encryption.test.ts src/lib/server/entities.test.ts src/lib/server/memory-temporal.test.ts src/lib/server/retrieval-ranking.test.ts src/lib/server/validate.test.ts src/lib/waitlist-email-address.test.ts src/lib/server/waitlist-approval.test.ts src/lib/server/waitlist-email.test.ts src/lib/server/think.test.ts src/lib/server/memory-store.test.ts src/lib/server/session.test.ts src/lib/server/capture.test.ts src/lib/server/consolidate.test.ts src/lib/server/candidate-store.test.ts src/lib/server/candidate-review.test.ts",
+    "test": "node --conditions=react-server --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/lib/api-key.test.ts src/lib/server/context-compiler.test.ts src/lib/server/data-encryption.test.ts src/lib/server/entities.test.ts src/lib/server/memory-temporal.test.ts src/lib/server/retrieval-ranking.test.ts src/lib/server/validate.test.ts src/lib/waitlist-email-address.test.ts src/lib/server/waitlist-approval.test.ts src/lib/server/waitlist-email.test.ts src/lib/server/think.test.ts src/lib/server/memory-store.test.ts src/lib/server/session.test.ts src/lib/server/capture.test.ts src/lib/server/consolidate.test.ts src/lib/server/candidate-store.test.ts src/lib/server/candidate-review.test.ts src/lib/server/production-config.test.ts src/lib/server/public-rate-limit.test.ts",
     "schema:memory-candidates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --env-file=.env.local scripts/ensure-memory-candidates.ts",
+    "schema:migrate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --env-file=.env.local scripts/migrate-appwrite-schema.ts",
+    "schema:verify": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --env-file=.env.local scripts/verify-appwrite-schema.ts",
     "eval:retrieval": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-retrieval.ts"
   },
   "dependencies": {
@@ -25,7 +27,7 @@
     "@sentry/nextjs": "^10.71.0",
     "appwrite": "^26.2.0",
     "lucide-react": "^1.28.0",
-    "next": "16.2.12",
+    "next": "16.3.3",
     "node-appwrite": "^28.0.0",
     "nodemailer": "9.0.5",
     "react": "19.2.4",
@@ -40,9 +42,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "nanoid": "3.3.18"
   },
   "onlyBuiltDependencies": [
     "@sentry/cli",

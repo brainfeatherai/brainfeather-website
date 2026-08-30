@@ -56,8 +56,9 @@ export default function OAuthCallback({
           cache: 'no-store',
         });
         if (!access.ok) {
-          await authService.logout().catch(() => {});
-          window.location.replace('/login?error=access');
+          const denied = access.status === 401 || access.status === 403;
+          if (denied) await authService.logout().catch(() => {});
+          window.location.replace(denied ? '/login?error=access' : '/login?error=unavailable');
           return;
         }
         // Full document load — see note 1 above.

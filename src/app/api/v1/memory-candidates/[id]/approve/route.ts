@@ -8,7 +8,6 @@ import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 
 const noStore = { 'Cache-Control': 'no-store, private' };
 
-export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 
 async function approveCandidate(

@@ -3,7 +3,6 @@ import { readOverview } from '@/lib/server/overview';
 
 const noStore = { 'Cache-Control': 'no-store, private' };
 
-export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 
 export async function GET(request: Request) {

@@ -8,7 +8,7 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { authenticate, fail } from '@/lib/server/api-auth';
-import { search } from '@/lib/server/memory-store';
+import { searchWithMeta } from '@/lib/server/memory-store';
 import { memoryEvidence, metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { CATEGORIES, dateTime, limitOf, oneOf, strictScopeOf } from '@/lib/server/validate';
@@ -37,7 +37,7 @@ async function searchMemories(request: Request) {
     if (!parsed.ok) return fail(400, parsed.error);
   }
 
-  const memories = await search(auth.userId, q, {
+  const result = await searchWithMeta(auth.userId, q, {
     category: rawCategory ?? undefined,
     projectId,
     strictScope,
@@ -45,15 +45,20 @@ async function searchMemories(request: Request) {
     referenceAtMs,
   });
   const includeEvidence = params.get('includeEvidence') === 'true';
-  const responseMemories = memories.map((memory) => ({
+  const responseMemories = result.memories.map((memory) => ({
     ...memory,
     metadata: metadataWithoutEvidenceDigest(memory.metadata),
     ...(includeEvidence ? { evidence: memoryEvidence(memory.metadata) ?? null } : {}),
   }));
 
-  return Response.json({ memories: responseMemories, count: memories.length, query: q });
+  return Response.json({
+    memories: responseMemories,
+    count: result.memories.length,
+    query: q,
+    truncated: result.truncated,
+    scanned: result.scanned,
+  });
 }
 
-export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('memory.search', searchMemories);

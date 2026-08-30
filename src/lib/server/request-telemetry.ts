@@ -4,6 +4,7 @@ import { ID, Query, type Models } from 'node-appwrite';
 import { after } from 'next/server';
 import { authenticate, fail, type AuthResult } from './api-auth';
 import { adminDb, adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin';
+import { reportServerError } from './report-error';
 
 type AuthSuccess = Extract<AuthResult, { ok: true }>;
 
@@ -34,7 +35,7 @@ export type RequestAnalytics = {
   > & { keyName: string })[];
 };
 
-function isMissingTelemetryTable(error: unknown): boolean {
+export function isMissingTelemetryTable(error: unknown): boolean {
   const value = error as { code?: number; type?: string; message?: string };
   return (
     value.code === 404 ||
@@ -99,6 +100,13 @@ export async function withAuthenticatedRequest(
     const response = await run(auth);
     status = response.status;
     return response;
+  } catch (error) {
+    reportServerError(error, {
+      operation,
+      route: new URL(request.url).pathname,
+      userId: auth.userId,
+    });
+    return fail(500, 'Brainfeather could not complete this request.');
   } finally {
     durationMs = performance.now() - startedAt;
   }

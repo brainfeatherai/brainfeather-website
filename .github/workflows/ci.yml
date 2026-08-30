@@ -29,3 +29,9 @@ jobs:
           NEXT_PUBLIC_APPWRITE_PROJECT_ID: build-placeholder
           NEXT_PUBLIC_APPWRITE_DATABASE_ID: brainfeather
           APPWRITE_API_KEY: build-placeholder
+          BRAINFEATHER_DATA_ENCRYPTION: encrypted
+          BRAINFEATHER_DATA_ENCRYPTION_KEYS: v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          BRAINFEATHER_DATA_INDEX_KEY: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+          BRAINFEATHER_API_KEY_STORAGE: hashed
+          BRAINFEATHER_SESSION_SECRET: build-session-secret-with-at-least-32-characters
+          BRAINFEATHER_RATE_LIMIT_SECRET: build-rate-limit-secret-with-at-least-32-characters

@@ -127,7 +127,7 @@ async function getContext(request: Request) {
       facts: facts.length,
       decisions: decisions.length,
       patterns: patterns.length,
-      total: all.length,
+      total: facts.length + decisions.length + patterns.length,
     },
     ...(includeEvidence
       ? {
@@ -143,6 +143,5 @@ async function getContext(request: Request) {
   });
 }
 
-export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 export const GET = withRequestTelemetry('context.read', getContext);

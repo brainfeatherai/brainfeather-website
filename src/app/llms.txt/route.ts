@@ -33,8 +33,8 @@ wiped when the session closes. Brainfeather is the disk beside it.
 In early development, and free while it is. Access is invite-only: request one
 from the waitlist on the home page. Approved testers create an account, generate an API key,
 and connect it to an MCP-compatible editor. The published package is
-@brainfeather/mcp on npm. Pin npx -y @brainfeather/mcp@1.5.1, then run
-npx -y @brainfeather/mcp@1.5.1 init so recall is automatic. Hosted Streamable
+@brainfeather/mcp on npm. Pin npx -y @brainfeather/mcp@1.5.2, then run
+npx -y @brainfeather/mcp@1.5.2 init so recall is automatic. Hosted Streamable
 HTTP MCP is at https://brainfeather.com/mcp.
 
 ## What it does
@@ -56,7 +56,7 @@ HTTP MCP is at https://brainfeather.com/mcp.
 - [Home](${SITE_URL}/): what it is and how it works.
 - [Request access](${SITE_URL}/#waitlist): join the invite-only waitlist.
 - [Hosted MCP](${SITE_URL}/mcp): Streamable HTTP for clients that cannot run local stdio.
-- [API keys](${SITE_URL}/api-keys): create a key, then pin @brainfeather/mcp@1.5.1 and run init.
+- [API keys](${SITE_URL}/api-keys): create a key, then pin @brainfeather/mcp@1.5.2 and run init.
 - [Review queue](${SITE_URL}/review): inferred captures wait here until approved. They do not enter recall on their own.
 - [Contact](${SITE_URL}/contact): support, security reports, press.
 - [Privacy Policy](${SITE_URL}/privacy): what is collected and stored, and for how long.

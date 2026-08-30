@@ -29,7 +29,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Models } from "appwrite";
-import { authService } from "@/services/appwrite";
+import { AccountApiError, authService } from "@/services/appwrite";
 import { normalizeWaitlistEmail } from "@/lib/waitlist-email-address";
 
 type SessionUser = Models.User<Models.Preferences>;
@@ -117,12 +117,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           try {
             await authService.ensureProfile(accessJwt);
             if (active && !settled) setUser(u);
-          } catch {
-            await authService.logout().catch(() => {});
+          } catch (error) {
+            const denied = error instanceof AccountApiError &&
+              (error.status === 401 || error.status === 403);
+            if (denied) await authService.logout().catch(() => {});
             if (active && !settled) {
-              setUser(null);
-              setJwt(null);
-              setJwtError('Your Brainfeather access request has not been approved yet.');
+              setUser(denied ? null : u);
+              if (denied) setJwt(null);
+              setJwtError(
+                error instanceof Error
+                  ? error.message
+                  : 'Could not verify dashboard access.',
+              );
             }
           }
         }
@@ -162,19 +168,27 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const generation = ++authGeneration.current;
     await authService.createEmailSession(email, password);
+    let current: SessionUser | null = null;
     try {
-      const current = await authService.getCurrentUser();
+      current = await authService.getCurrentUser();
       if (generation !== authGeneration.current) return;
       if (current) {
+        setUser(current);
         const accessJwt = await refreshJwt();
         if (!accessJwt) throw new Error('Could not establish dashboard access.');
         await authService.ensureProfile(accessJwt);
         setUser(current);
       }
     } catch (error) {
-      await authService.logout().catch(() => {});
-      setUser(null);
-      setJwt(null);
+      const denied = error instanceof AccountApiError &&
+        (error.status === 401 || error.status === 403);
+      if (denied) {
+        await authService.logout().catch(() => {});
+        setUser(null);
+        setJwt(null);
+      } else if (current) {
+        setUser(current);
+      }
       throw error;
     }
   }, [refreshJwt]);
@@ -186,19 +200,27 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       await authService.createEmailPassword(accountEmail, password, name, inviteId);
       // create() does not open a session; the caller must sign in.
       await authService.createEmailSession(accountEmail, password);
+      let current: SessionUser | null = null;
       try {
-        const current = await authService.getCurrentUser();
+        current = await authService.getCurrentUser();
         if (generation !== authGeneration.current) return;
         if (current) {
+          setUser(current);
           const accessJwt = await refreshJwt();
           if (!accessJwt) throw new Error('Could not establish dashboard access.');
           await authService.ensureProfile(accessJwt);
           setUser(current);
         }
       } catch (error) {
-        await authService.logout().catch(() => {});
-        setUser(null);
-        setJwt(null);
+        const denied = error instanceof AccountApiError &&
+          (error.status === 401 || error.status === 403);
+        if (denied) {
+          await authService.logout().catch(() => {});
+          setUser(null);
+          setJwt(null);
+        } else if (current) {
+          setUser(current);
+        }
         throw error;
       }
     },

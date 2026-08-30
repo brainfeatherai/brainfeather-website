@@ -81,7 +81,7 @@ async function attempt(work: () => Promise<{ body: string; data: Record<string, 
 }
 
 export function createHostedMcpServer(userId: string, projectId: string): McpServer {
-  const server = new McpServer({ name: 'brainfeather', version: '1.5.1' });
+  const server = new McpServer({ name: 'brainfeather', version: '1.5.2' });
 
   server.registerTool(
     'get_context',

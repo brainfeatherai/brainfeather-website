@@ -24,14 +24,16 @@
    ──────────────────────────────────────────────────────────────── */
 
 import { useEffect, useRef } from "react";
-import { authService } from "@/services/appwrite";
+import { AccountApiError, authService } from "@/services/appwrite";
 
 export default function OAuthCallback({
   userId,
   secret,
+  inviteId,
 }: {
   userId: string | null;
   secret: string | null;
+  inviteId: string | null;
 }) {
   const started = useRef(false);
 
@@ -43,7 +45,9 @@ export default function OAuthCallback({
     started.current = true;
 
     if (!userId || !secret) {
-      window.location.replace("/login?error=oauth");
+      const query = new URLSearchParams({ error: 'oauth' });
+      if (inviteId) query.set('invite', inviteId);
+      window.location.replace(`/login?${query}`);
       return;
     }
 
@@ -51,14 +55,17 @@ export default function OAuthCallback({
       .completeOAuth(userId, secret)
       .then(async () => {
         const jwt = await authService.createJWT();
-        const access = await fetch('/api/public/session', {
-          headers: { Authorization: `Bearer ${jwt.jwt}` },
-          cache: 'no-store',
-        });
-        if (!access.ok) {
-          const denied = access.status === 401 || access.status === 403;
+        try {
+          await authService.verifyDashboardSession(jwt.jwt, inviteId ?? undefined);
+        } catch (error) {
+          const denied = error instanceof AccountApiError &&
+            (error.status === 401 || error.status === 403);
           if (denied) await authService.logout().catch(() => {});
-          window.location.replace(denied ? '/login?error=access' : '/login?error=unavailable');
+          const query = new URLSearchParams({
+            error: denied ? (inviteId ? 'invite' : 'access') : 'unavailable',
+          });
+          if (inviteId) query.set('invite', inviteId);
+          window.location.replace(`/login?${query}`);
           return;
         }
         // Full document load — see note 1 above.
@@ -66,9 +73,11 @@ export default function OAuthCallback({
       })
       .catch(async () => {
         await authService.logout().catch(() => {});
-        window.location.replace("/login?error=oauth");
+        const query = new URLSearchParams({ error: 'oauth' });
+        if (inviteId) query.set('invite', inviteId);
+        window.location.replace(`/login?${query}`);
       });
-  }, [userId, secret]);
+  }, [userId, secret, inviteId]);
 
   return (
     <output

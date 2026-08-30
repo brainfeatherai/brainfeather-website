@@ -11,3 +11,7 @@ export function normalizeWaitlistEmail(value: string): string {
   }
   return `${local}@${domain}`;
 }
+
+export function waitlistEmailsMatch(left: string, right: string): boolean {
+  return normalizeWaitlistEmail(left) === normalizeWaitlistEmail(right);
+}

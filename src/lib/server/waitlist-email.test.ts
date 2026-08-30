@@ -3,6 +3,7 @@ import test from 'node:test';
 import { CONTACT_EMAIL, SITE_URL } from '../site.ts';
 import { normalizeWaitlistEmail } from '../waitlist-email-address.ts';
 import {
+  assertRecipientAccepted,
   buildWaitlistApprovalEmail,
   buildWaitlistEmails,
 } from './waitlist-email.ts';
@@ -54,6 +55,18 @@ test('builds an approved-access email with a direct invitation link', () => {
   assert.equal(message.to, 'person@gmail.com');
   assert.match(message.subject, /access is ready/i);
   assert.match(message.text, /\/login\?invite=request_123/);
+  assert.doesNotMatch(message.text, /person%40gmail\.com/);
   assert.match(message.html, /Access approved/);
-  assert.match(message.html, /Open Brainfeather/);
+  assert.match(message.html, /Sign in to Brainfeather/);
+  assert.match(message.html, /directly to your dashboard/);
+});
+
+test('requires SMTP to accept the intended approval recipient', () => {
+  assert.doesNotThrow(() => {
+    assertRecipientAccepted({ accepted: ['person@gmail.com'] }, 'Person+test@gmail.com');
+  });
+  assert.throws(
+    () => assertRecipientAccepted({ accepted: ['other@example.com'] }, 'person@example.com'),
+    /did not accept the intended recipient/,
+  );
 });

@@ -71,6 +71,15 @@ sends the applicant a direct `/login?invite=...` account link. Google sign-in re
 invite-only because the callback verifies the authenticated email against the approved
 waitlist before allowing console access.
 
+Approve requests through that signed review page, not by editing `approved` directly in the
+Appwrite console. A direct database edit bypasses the website and therefore cannot trigger an
+email. The review route confirms invitation delivery before approving a first-time request, so
+a failed send leaves the request unapproved and safe to retry.
+
+The invitation opens `/login` with the approved email prefilled and locked. Email/password and
+Google sign-in both verify the authenticated account against that exact waitlist request before
+redirecting to `/overview`; choosing a different Google account signs the session back out.
+
 Enable delivery by turning on two-step verification for `getbrainfeather@gmail.com`, creating
 a Google app password, and setting `GMAIL_APP_PASSWORD` in Vercel for Production, Preview, and
 Development. Use the 16-character app password, not the Gmail account password. Redeploy after

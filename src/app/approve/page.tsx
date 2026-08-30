@@ -61,12 +61,13 @@ export default async function ApprovePage({
             <>
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald">Waitlist review</p>
               <h1 className="mt-3 text-[30px] font-medium tracking-[-0.035em] text-forest">{row.approved ? 'Access is already approved.' : 'Approve this request?'}</h1>
-              <p className="mt-4 text-[14px] leading-7 text-forest/65">{row.approved ? 'You can resend the direct account link if needed.' : 'This updates Appwrite and emails the applicant a direct account link.'}</p>
+              <p className="mt-4 text-[14px] leading-7 text-forest/65">{row.approved ? 'You can resend the direct account link if needed.' : 'This emails the applicant a direct account link, then confirms their access in Appwrite.'}</p>
               <div className="mt-6 rounded-xl border border-forest/10 bg-paper px-4 py-3">
                 <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">Email</p>
                 <p className="mt-1 break-all text-[15px] font-medium text-forest">{row.email}</p>
               </div>
-              {failed ? <p className="mt-4 text-[13px] leading-6 text-red-700">Access was approved, but the email could not be sent. Try again to resend it.</p> : null}
+              {failed ? <p className="mt-4 text-[13px] leading-6 text-red-700">{row.approved ? 'Access is approved, but the email could not be sent. Try again to resend it.' : 'The email could not be sent, so access was not approved. Check the mail configuration and try again.'}</p> : null}
+              {!row.approved ? <p className="mt-4 text-[12px] leading-5 text-forest/50">Use this button to approve access. Editing the Appwrite row directly bypasses email delivery.</p> : null}
               <form action="/api/public/approve" method="post" className="mt-7">
                 <input type="hidden" name="request" value={rowId} />
                 <input type="hidden" name="expires" value={expires} />

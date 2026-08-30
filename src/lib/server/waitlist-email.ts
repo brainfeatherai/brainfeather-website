@@ -1,8 +1,12 @@
 import 'server-only';
 
 import nodemailer from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { CONTACT_EMAIL, SITE_URL } from '../site.ts';
-import { normalizeWaitlistEmail } from '../waitlist-email-address.ts';
+import {
+  normalizeWaitlistEmail,
+  waitlistEmailsMatch,
+} from '../waitlist-email-address.ts';
 import { createWaitlistApprovalLink } from './waitlist-approval.ts';
 
 const BRAND_NAME = 'Brainfeather';
@@ -137,13 +141,13 @@ export function buildWaitlistApprovalEmail(applicantEmail: string, requestId: st
     to: realEmail,
     replyTo: CONTACT_EMAIL,
     subject: 'Your Brainfeather access is ready',
-    text: `Your Brainfeather access request has been approved. Create your account or continue with Google here: ${accountUrl}`,
+    text: `Your Brainfeather access request has been approved. Sign in with the approved email, create your account, or continue with Google here: ${accountUrl}`,
     html: emailShell({
       eyebrow: 'Access approved',
       title: 'Your Brainfeather access is ready.',
-      body: 'Create your account with email and password, or continue with the approved Google account.',
+      body: 'Sign in with the approved email, create your account, or continue with the approved Google account. After authentication, you will go directly to your dashboard.',
       detail: '<strong style="color:#173c32;">Use the same email address you requested access with.</strong><br>This invitation is linked to your approved waitlist request.',
-      action: { href: accountUrl, label: 'Open Brainfeather' },
+      action: { href: accountUrl, label: 'Sign in to Brainfeather' },
     }),
   };
 }
@@ -161,6 +165,20 @@ function mailTransport() {
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
   });
+}
+
+export function assertRecipientAccepted(
+  info: Pick<SMTPTransport.SentMessageInfo, 'accepted'>,
+  recipient: string,
+): void {
+  const expected = normalizeWaitlistEmail(recipient);
+  const accepted = info.accepted.some((address) => {
+    const value = typeof address === 'string' ? address : address.address;
+    return waitlistEmailsMatch(value, expected);
+  });
+  if (!accepted) {
+    throw new Error('[brainfeather] SMTP did not accept the intended recipient.');
+  }
 }
 
 export async function sendWaitlistEmails(applicantEmail: string, requestId: string): Promise<void> {
@@ -188,7 +206,9 @@ export async function sendWaitlistApprovalEmail(
 ): Promise<void> {
   const transporter = mailTransport();
   try {
-    await transporter.sendMail(buildWaitlistApprovalEmail(applicantEmail, requestId));
+    const message = buildWaitlistApprovalEmail(applicantEmail, requestId);
+    const info = await transporter.sendMail(message);
+    assertRecipientAccepted(info, message.to);
   } finally {
     transporter.close();
   }

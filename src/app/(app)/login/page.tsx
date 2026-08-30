@@ -43,6 +43,8 @@ export default async function LoginPage({
   const initialError =
     error === 'access'
       ? 'This Google account has not been approved for Brainfeather access.'
+      : error === 'invite'
+        ? 'Sign in with the same email address that received this invitation.'
       : error === 'oauth'
         ? 'Google sign-in could not be completed. Try again.'
         : null;

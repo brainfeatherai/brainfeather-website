@@ -84,7 +84,15 @@ async function ensureString(
   if (!existing) {
     await tables.createStringColumn({ databaseId: DATABASE_ID, tableId, key, size, required });
   } else if ('size' in existing && existing.size < size) {
-    await tables.updateStringColumn({ databaseId: DATABASE_ID, tableId, key, size, required });
+    const params = {
+      databaseId: DATABASE_ID,
+      tableId,
+      key,
+      size,
+      required,
+      xdefault: existing.default ?? null,
+    };
+    await (tables.updateStringColumn as unknown as (input: typeof params) => Promise<unknown>)(params);
   }
 }
 
@@ -102,7 +110,15 @@ async function ensureEnum(
   } else if ('elements' in existing) {
     const merged = [...new Set([...existing.elements, ...elements])];
     if (merged.length !== existing.elements.length) {
-      await tables.updateEnumColumn({ databaseId: DATABASE_ID, tableId, key, elements: merged, required });
+      const params = {
+        databaseId: DATABASE_ID,
+        tableId,
+        key,
+        elements: merged,
+        required,
+        xdefault: existing.default ?? null,
+      };
+      await (tables.updateEnumColumn as unknown as (input: typeof params) => Promise<unknown>)(params);
     }
   }
 }
@@ -263,25 +279,29 @@ async function ensureCoreCollections(databases: Databases) {
   if (source && 'elements' in source) {
     const elements = [...new Set([...source.elements, ...SOURCES])];
     if (elements.length !== source.elements.length) {
-      await databases.updateEnumAttribute({
+      const params = {
         databaseId: DATABASE_ID,
         collectionId: 'memories',
         key: 'source',
         elements,
         required: source.required,
-      });
+        xdefault: source.default ?? null,
+      };
+      await (databases.updateEnumAttribute as unknown as (input: typeof params) => Promise<unknown>)(params);
     }
   }
   for (const [key, size] of [['content', 11000], ['title', 1024], ['metadata', 3000]] as const) {
     const attribute = byKey.get(key);
     if (attribute && 'size' in attribute && attribute.size < size) {
-      await databases.updateStringAttribute({
+      const params = {
         databaseId: DATABASE_ID,
         collectionId: 'memories',
         key,
         required: attribute.required,
         size,
-      });
+        xdefault: attribute.default ?? null,
+      };
+      await (databases.updateStringAttribute as unknown as (input: typeof params) => Promise<unknown>)(params);
     }
   }
   await ensureCollectionIndex(databases, 'memories', 'idx_user_status', ['userId', 'status']);
@@ -295,7 +315,15 @@ async function ensureCoreCollections(databases: Databases) {
     if (!attribute) {
       await databases.createStringAttribute({ databaseId: DATABASE_ID, collectionId: 'entities', key, size: 3000, required: false });
     } else if ('size' in attribute && attribute.size < 3000) {
-      await databases.updateStringAttribute({ databaseId: DATABASE_ID, collectionId: 'entities', key, required: attribute.required, size: 3000 });
+      const params = {
+        databaseId: DATABASE_ID,
+        collectionId: 'entities',
+        key,
+        required: attribute.required,
+        size: 3000,
+        xdefault: attribute.default ?? null,
+      };
+      await (databases.updateStringAttribute as unknown as (input: typeof params) => Promise<unknown>)(params);
     }
   }
   await ensureCollectionIndex(databases, 'entities', 'idx_user_name', ['userId', 'name']);
@@ -307,7 +335,15 @@ async function ensureCoreCollections(databases: Databases) {
   const apiKeys = await hardenCollection(databases, 'api_keys');
   const keyField = apiKeys.attributes.find((attribute) => attribute.key === 'key');
   if (keyField && 'size' in keyField && keyField.size < 90) {
-    await databases.updateStringAttribute({ databaseId: DATABASE_ID, collectionId: 'api_keys', key: 'key', required: keyField.required, size: 90 });
+    const params = {
+      databaseId: DATABASE_ID,
+      collectionId: 'api_keys',
+      key: 'key',
+      required: keyField.required,
+      size: 90,
+      xdefault: keyField.default ?? null,
+    };
+    await (databases.updateStringAttribute as unknown as (input: typeof params) => Promise<unknown>)(params);
   }
   const uniqueKey = apiKeys.indexes.find(
     (index) =>

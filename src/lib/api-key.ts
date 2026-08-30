@@ -9,7 +9,14 @@ export function createApiKey(): string {
 }
 
 export function apiKeyHashWritesEnabled(): boolean {
-  return process.env.BRAINFEATHER_API_KEY_STORAGE === 'hashed';
+  const mode = process.env.BRAINFEATHER_API_KEY_STORAGE;
+  if (mode === undefined) return process.env.NODE_ENV === 'production';
+  if (mode !== 'hashed' && mode !== 'compatibility') {
+    throw new Error(
+      '[brainfeather] BRAINFEATHER_API_KEY_STORAGE must be hashed or compatibility.',
+    );
+  }
+  return mode === 'hashed';
 }
 
 export function isBrainfeatherApiKey(value: string): boolean {

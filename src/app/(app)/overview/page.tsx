@@ -34,17 +34,6 @@ function Metric({
   );
 }
 
-function PathMs({ label, value }: { label: string; value?: number }) {
-  return (
-    <div className="rounded-lg bg-paper-dim p-4">
-      <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/30">{label}</p>
-      <p className="mt-2 text-[22px] font-semibold text-forest">
-        {value == null ? "—" : `${value} ms`}
-      </p>
-    </div>
-  );
-}
-
 function OverviewView() {
   const { token, error: sessionError, request } = useApiSession();
   const [data, setData] = useState<OverviewData | null>(null);
@@ -70,7 +59,7 @@ function OverviewView() {
   return (
     <AppShell
       title="Overview"
-      intro="Client, MCP, and dashboard on one path. Recall stays off the prompt's critical path; inferred facts wait here until you approve them."
+      intro="Your memory workspace at a glance. Review what is active, approve suggestions, and manage connected agents."
       wide
     >
       {error ?? sessionError ? (
@@ -106,39 +95,6 @@ function OverviewView() {
               icon={Activity}
             />
           </div>
-
-          <section className="hairline mt-6 rounded-xl border bg-paper p-5">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h2 className="text-[15px] font-semibold text-forest">Client → MCP → dashboard</h2>
-                <p className="mt-1 max-w-2xl text-[11px] text-forest/40">
-                  Hooks recall before the prompt and queue capture after the session. The dashboard
-                  is the only place inferred facts become memories. Timings below are from API-key
-                  client traffic, not dashboard-only use.
-                </p>
-              </div>
-              {data.pendingCandidates > 0 ? (
-                <Link
-                  href="/review"
-                  className="rounded-md border border-emerald/35 bg-emerald/10 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-emerald"
-                >
-                  Review {data.pendingCandidates} pending
-                </Link>
-              ) : (
-                <Link
-                  href="/api-keys"
-                  className="rounded-md border border-white/[0.09] px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/50 hover:text-forest"
-                >
-                  Connect a client
-                </Link>
-              )}
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <PathMs label="Recall · context.read" value={data.path?.recallMs} />
-              <PathMs label="Hosted MCP · mcp.http" value={data.path?.mcpMs} />
-              <PathMs label="Capture · memory.capture" value={data.path?.captureMs} />
-            </div>
-          </section>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="hairline rounded-xl border bg-paper p-5">

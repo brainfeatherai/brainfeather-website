@@ -7,7 +7,8 @@ async function consolidateMemories(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
-  const body = (await readJson(request)) ?? {};
+  const body = await readJson(request);
+  if (!body) return fail(400, 'Body must be a JSON object.');
   let projectId: string | undefined;
   if (body.projectId !== undefined) {
     const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });

@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { validateProductionConfiguration } from "./src/lib/server/production-config";
+
+validateProductionConfiguration();
 
 /* The canonical host. Everything SEO-facing already declares the apex —
    canonical tags, sitemap, robots, JSON-LD — so www redirects TO it.

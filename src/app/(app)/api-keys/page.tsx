@@ -17,26 +17,8 @@ function mcpConfig(token: string) {
       mcpServers: {
         brainfeather: {
           command: "npx",
-          args: ["-y", "@brainfeather/mcp@1.5.1"],
+          args: ["-y", "@brainfeather/mcp@1.5.2"],
           env: { BRAINFEATHER_API_KEY: token },
-        },
-      },
-    },
-    null,
-    2,
-  );
-}
-
-function mcpHttpConfig(token: string) {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        brainfeather: {
-          url: "https://brainfeather.com/mcp",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "x-brainfeather-project": "github.com/you/your-repo",
-          },
         },
       },
     },
@@ -116,7 +98,7 @@ function ApiKeysView() {
   return (
     <AppShell
       title="API Keys"
-      intro="Create and revoke credentials for agents, editors, and your own API clients."
+      intro="Create a secure key for your coding agent. Each key can be revoked independently."
       wide
     >
       <section className="hairline rounded-xl border bg-paper p-5">
@@ -124,7 +106,7 @@ function ApiKeysView() {
           <div className="max-w-2xl flex-1">
             <h2 className="text-[16px] font-semibold text-forest">Create a key</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-forest/45">
-              The secret is shown once. Brainfeather stores only its SHA-256 digest.
+              The secret is shown once. Store it safely; Brainfeather keeps only its digest.
             </p>
           </div>
           <form onSubmit={createKey} className="flex w-full gap-2 lg:max-w-lg">
@@ -206,14 +188,7 @@ function ApiKeysView() {
                           onClick={() => copy(`${key.$id}:config`, mcpConfig(secret))}
                           className={`${ACTION} text-forest/55 hover:border-emerald/35 hover:text-forest`}
                         >
-                          {copied === `${key.$id}:config` ? "Copied" : "Copy stdio MCP"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => copy(`${key.$id}:http`, mcpHttpConfig(secret))}
-                          className={`${ACTION} text-forest/55 hover:border-emerald/35 hover:text-forest`}
-                        >
-                          {copied === `${key.$id}:http` ? "Copied" : "Copy HTTP MCP"}
+                          {copied === `${key.$id}:config` ? "Copied" : "Copy MCP config"}
                         </button>
                       </>
                     ) : null}
@@ -232,19 +207,22 @@ function ApiKeysView() {
         )}
       </section>
 
-      <section className="rule-t mt-9 pt-8">
-        <h2 className="text-[15px] font-semibold text-forest">Client configuration</h2>
-        <p className="mt-1 text-[12px] text-forest/45">
-          Pin <code>@brainfeather/mcp@1.5.1</code>, then run{" "}
-          <code>npx -y @brainfeather/mcp@1.5.1 init</code> so recall happens on every
-          prompt. HTTP MCP needs a project id because it has no local workspace.
-        </p>
-        <pre className="hairline mt-4 overflow-x-auto rounded-lg border bg-paper-dim p-4 font-mono text-[11px] leading-relaxed text-forest/65">
-          <code>{mcpConfig("bf_live_…")}</code>
-        </pre>
-        <pre className="hairline mt-3 overflow-x-auto rounded-lg border bg-paper-dim p-4 font-mono text-[11px] leading-relaxed text-forest/65">
-          <code>{mcpHttpConfig("bf_live_…")}</code>
-        </pre>
+      <section className="hairline mt-9 rounded-xl border bg-paper p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="font-mono text-[9px] uppercase tracking-[0.13em] text-emerald/70">
+              Recommended setup
+            </p>
+            <h2 className="mt-2 text-[16px] font-semibold text-forest">Connect your coding agent</h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-forest/45">
+              Generate a key, copy its MCP config, and add it to your client. Run the optional
+              adapter installer once for automatic recall in Claude Code, Cursor, and OpenCode.
+            </p>
+          </div>
+          <code className="shrink-0 rounded-lg border border-white/[0.08] bg-paper-dim px-4 py-3 font-mono text-[11px] text-forest/65">
+            npx -y @brainfeather/mcp@1.5.2 init
+          </code>
+        </div>
       </section>
     </AppShell>
   );

@@ -2,7 +2,7 @@
 
 import { reportServerError } from "@/lib/server/report-error";
 import { normalizeWaitlistEmail } from "@/lib/waitlist-email-address";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { after } from "next/server";
 
 /* ────────────────────────────────────────────────────────────────
@@ -59,6 +59,21 @@ export async function joinWaitlist(
   }
   if (!EMAIL.test(rawEmail) || !EMAIL.test(email)) {
     return { status: "error", message: "That doesn't look like an email address." };
+  }
+
+  try {
+    const requestHeaders = await headers();
+    const address =
+      requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      requestHeaders.get('x-real-ip') ||
+      'unknown';
+    const { consumePublicRateLimit } = await import('@/lib/server/public-rate-limit');
+    if (!(await consumePublicRateLimit('waitlist', address))) {
+      return { status: 'error', message: 'Too many attempts. Try again later.' };
+    }
+  } catch (error) {
+    reportServerError(error, { operation: 'waitlist.rate_limit', route: '/' });
+    return { status: 'error', message: "Couldn't save that. Try again in a moment?" };
   }
 
   /* Writes to the Appwrite `waitlist` table.

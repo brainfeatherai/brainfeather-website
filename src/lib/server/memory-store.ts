@@ -46,15 +46,18 @@ async function listAllDocuments<T>(
   transactionId?: string,
 ): Promise<T[]> {
   const documents: T[] = [];
-  for (let offset = 0; ; offset += pageSize) {
+  let cursor: string | undefined;
+  for (;;) {
     const page = await adminDb.listDocuments(
       DATABASE_ID,
       collectionId,
-      [...queries, Query.limit(pageSize), Query.offset(offset)],
+      [...queries, Query.limit(pageSize), ...(cursor ? [Query.cursorAfter(cursor)] : [])],
       transactionId,
     );
     documents.push(...(page.documents as unknown as T[]));
     if (page.documents.length < pageSize) return documents;
+    cursor = page.documents.at(-1)?.$id;
+    if (!cursor) return documents;
   }
 }
 
@@ -94,6 +97,10 @@ export type EdgeDoc = {
   validFrom: string;
   validTo?: string;
 };
+
+export function publicEdge<T extends EdgeDoc>(edge: T): T {
+  return { ...edge, weight: edge.weight / 10 };
+}
 
 type StoredMemoryMetadata =
   | { version: 1; metadata?: string; projectId?: string }
@@ -387,17 +394,16 @@ export async function listActive(
     limit?: number;
     strictScope?: boolean;
     referenceAtMs?: number;
+    all?: boolean;
   } = {},
 ): Promise<MemoryDoc[]> {
   const limit = opts.limit ?? 50;
   /* Fetch a small multiple of `limit`, not a fixed 500. Decrypting hundreds
      of rows on every recall is what makes context feel slow; ranking still
      sees more candidates than it returns. */
-  const retrievalWindow = Math.min(500, Math.max(limit * 2, 80));
   const queries = [
     Query.equal('userId', userId),
     Query.orderDesc('$createdAt'),
-    Query.limit(retrievalWindow),
   ];
   if (opts.referenceAtMs === undefined) queries.push(Query.equal('status', 'active'));
   if (opts.category) queries.push(Query.equal('category', opts.category));
@@ -433,12 +439,26 @@ export async function listActive(
     );
   }
 
-  const res = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.memories, queries);
   const referenceAtMs = opts.referenceAtMs ?? Date.now();
-  return (res.documents as unknown as MemoryDoc[])
-    .map(decryptedMemory)
-    .filter((memory) => memoryIsVisibleAt(memory, referenceAtMs))
-    .slice(0, limit);
+  const visible: MemoryDoc[] = [];
+  const pageSize = opts.all ? 100 : Math.min(100, Math.max(limit * 2, 80));
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.memories, [
+      ...queries,
+      Query.limit(pageSize),
+      ...(cursor ? [Query.cursorAfter(cursor)] : []),
+    ]);
+    visible.push(
+      ...(page.documents as unknown as MemoryDoc[])
+        .map(decryptedMemory)
+        .filter((memory) => memoryIsVisibleAt(memory, referenceAtMs)),
+    );
+    if (!opts.all && visible.length >= limit) return visible.slice(0, limit);
+    if (page.documents.length < pageSize) return opts.all ? visible : visible.slice(0, limit);
+    cursor = page.documents.at(-1)?.$id;
+    if (!cursor) return opts.all ? visible : visible.slice(0, limit);
+  }
 }
 
 export async function listAllActive(userId: string): Promise<MemoryDoc[]> {
@@ -478,10 +498,30 @@ export async function search(
     referenceAtMs?: number;
   } = {},
 ): Promise<MemoryDoc[]> {
-  const limit = opts.limit ?? 10;
-  const pool = await listActive(userId, { ...opts, limit: 100 });
+  return (await searchWithMeta(userId, query, opts)).memories;
+}
 
-  return rankMemories(pool, query, { limit, asOfMs: opts.referenceAtMs });
+export async function searchWithMeta(
+  userId: string,
+  query: string,
+  opts: {
+    category?: string;
+    projectId?: string;
+    limit?: number;
+    strictScope?: boolean;
+    referenceAtMs?: number;
+  } = {},
+): Promise<{ memories: MemoryDoc[]; truncated: boolean; scanned: number }> {
+  const limit = opts.limit ?? 10;
+  const pool = await listActive(userId, { ...opts, limit: 501 });
+  const truncated = pool.length > 500;
+  const candidates = truncated ? pool.slice(0, 500) : pool;
+
+  return {
+    memories: rankMemories(candidates, query, { limit, asOfMs: opts.referenceAtMs }),
+    truncated,
+    scanned: candidates.length,
+  };
 }
 
 export async function createMemory(
@@ -827,6 +867,20 @@ export async function listEntities(userId: string, type?: string): Promise<Entit
   return rows.map(decryptedEntity);
 }
 
+export async function getEntity(userId: string, id: string): Promise<EntityDoc | null> {
+  try {
+    const row = (await adminDb.getDocument(
+      DATABASE_ID,
+      COLLECTIONS.entities,
+      id,
+    )) as unknown as StoredEntityDoc;
+    return row.userId === userId ? decryptedEntity(row) : null;
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
 async function edgesForMemoryIds(
   userId: string,
   memoryIds: string[],
@@ -1065,7 +1119,7 @@ export async function createEdge(
       weight: Math.round(Math.max(0, Math.min(1, weight)) * 10),
       validFrom: new Date().toISOString(),
     });
-    return doc as unknown as EdgeDoc;
+    return publicEdge(doc as unknown as EdgeDoc);
   } catch (error) {
     if (!deterministic || (error as { code?: number }).code !== 409) throw error;
     const existing = (await adminDb.getDocument(
@@ -1073,12 +1127,66 @@ export async function createEdge(
       COLLECTIONS.edges,
       edgeId,
     )) as unknown as EdgeDoc;
-    if (!existing.validTo) return existing;
-    return (await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.edges, edgeId, {
+    if (!existing.validTo) return publicEdge(existing);
+    return publicEdge((await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.edges, edgeId, {
       validFrom: new Date().toISOString(),
       validTo: '',
       weight: Math.round(Math.max(0, Math.min(1, weight)) * 10),
-    })) as unknown as EdgeDoc;
+    })) as unknown as EdgeDoc);
+  }
+}
+
+export async function createOwnedEntityEdge(
+  userId: string,
+  sourceId: string,
+  targetId: string,
+  type: string,
+  weight = 0.5,
+): Promise<EdgeDoc | null> {
+  const transaction = await adminDb.createTransaction({ ttl: 60 });
+  const edgeId = ID.custom(
+    createHash('sha256')
+      .update(`${userId}\0${sourceId}\0${targetId}\0${type}`)
+      .digest('hex')
+      .slice(0, 36),
+  );
+  try {
+    const [source, target] = await Promise.all(
+      [sourceId, targetId].map((id) =>
+        adminDb.getDocument(
+          DATABASE_ID,
+          COLLECTIONS.entities,
+          id,
+          undefined,
+          transaction.$id,
+        ) as unknown as Promise<StoredEntityDoc>,
+      ),
+    ) as unknown as [StoredEntityDoc, StoredEntityDoc];
+    if (source.userId !== userId || target.userId !== userId) {
+      await adminDb.updateTransaction({ transactionId: transaction.$id, rollback: true });
+      return null;
+    }
+    const edge = await adminDb.upsertDocument({
+      databaseId: DATABASE_ID,
+      collectionId: COLLECTIONS.edges,
+      documentId: edgeId,
+      data: {
+        userId,
+        sourceId,
+        targetId,
+        type,
+        weight: Math.round(Math.max(0, Math.min(1, weight)) * 10),
+        validFrom: new Date().toISOString(),
+        validTo: '',
+      },
+      transactionId: transaction.$id,
+    });
+    await adminDb.updateTransaction({ transactionId: transaction.$id, commit: true });
+    return publicEdge(edge as unknown as EdgeDoc);
+  } catch (error) {
+    await adminDb.updateTransaction({ transactionId: transaction.$id, rollback: true }).catch(() => {});
+    if (isNotFound(error)) return null;
+    throw error;
   }
 }
 
@@ -1255,5 +1363,5 @@ export async function traverseGraph(
     )
   ).flat().map(decryptedEntity);
 
-  return { entities, edges: [...edges.values()] };
+  return { entities, edges: [...edges.values()].map(publicEdge) };
 }

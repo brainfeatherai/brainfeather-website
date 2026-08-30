@@ -11,7 +11,6 @@ import { str } from '@/lib/server/validate';
 const STATUSES = new Set<CandidateStatus>(['pending', 'approved', 'rejected']);
 const noStore = { 'Cache-Control': 'no-store, private' };
 
-export const preferredRegion = 'sin1';
 export const runtime = 'nodejs';
 
 function publicCandidate(row: {

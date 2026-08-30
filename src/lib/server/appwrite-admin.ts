@@ -46,6 +46,7 @@ export const COLLECTIONS = {
   edges: 'edges',
   apiKeys: 'api_keys',
   apiRequests: 'api_requests',
+  publicRateLimits: 'public_rate_limits',
   contextRules: 'context_rules',
   teams: 'teams',
   teamMembers: 'team_members',

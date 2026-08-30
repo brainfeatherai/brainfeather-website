@@ -22,8 +22,6 @@ import {
   type SaveDecision,
 } from "@/lib/api-client";
 
-const COMMAND = "npx -y @brainfeather/mcp@1.5.1";
-
 const CATEGORIES = [
   "preference",
   "context",
@@ -414,16 +412,12 @@ function Dashboard() {
                 Nothing recorded yet
               </h2>
               <p className="mx-auto mt-1.5 max-w-sm text-[14px] text-forest/60">
-                Add an approved fact above, or connect a client. Inferred captures
-                wait in the{" "}
+                Add a fact above. Suggestions from connected agents wait in the{" "}
                 <Link href="/review" className="underline decoration-emerald/40 underline-offset-2">
                   review queue
                 </Link>{" "}
                 until you accept them.
               </p>
-              <code className="hairline mt-5 inline-block rounded-md border bg-paper-dim px-4 py-2 font-mono text-[12px] text-forest/75">
-                {COMMAND}
-              </code>
             </div>
           ) : (
             <>

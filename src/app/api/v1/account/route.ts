@@ -8,28 +8,50 @@ import {
   DATABASE_ID,
 } from '@/lib/server/appwrite-admin';
 import { isMissingCandidatesTable } from '@/lib/server/candidate-store';
+import { isMissingTelemetryTable } from '@/lib/server/request-telemetry';
 import { deleteWaitlistRequests } from '@/lib/server/waitlist';
 
 async function deleteMatching(collectionId: string, attribute: string, value: string) {
   for (;;) {
-    const page = await adminDb.listDocuments(DATABASE_ID, collectionId, [
-      Query.equal(attribute, value),
-      Query.limit(100),
-    ]);
+    let page;
+    try {
+      page = await adminDb.listDocuments(DATABASE_ID, collectionId, [
+        Query.equal(attribute, value),
+        Query.limit(100),
+      ]);
+    } catch (error) {
+      if ((error as { code?: number }).code === 404) return;
+      throw error;
+    }
     if (!page.documents.length) return;
     await Promise.all(
       page.documents.map((document) =>
-        adminDb.deleteDocument(DATABASE_ID, collectionId, document.$id),
+        adminDb.deleteDocument(DATABASE_ID, collectionId, document.$id).catch((error) => {
+          if ((error as { code?: number }).code !== 404) throw error;
+        }),
       ),
     );
+  }
+}
+
+async function listOwnedTeams(userId: string) {
+  try {
+    return await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.teams, [
+      Query.equal('ownerId', userId),
+      Query.limit(100),
+    ]);
+  } catch (error) {
+    if ((error as { code?: number }).code === 404) return { documents: [] };
+    throw error;
   }
 }
 
 async function getProfile(userId: string) {
   try {
     return await adminDb.getDocument(DATABASE_ID, COLLECTIONS.users, userId);
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as { code?: number }).code === 404) return null;
+    throw error;
   }
 }
 
@@ -69,10 +91,7 @@ export async function DELETE(request: Request) {
 
   const user = await adminUsers.get({ userId: auth.userId });
   for (;;) {
-    const ownedTeams = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.teams, [
-      Query.equal('ownerId', auth.userId),
-      Query.limit(100),
-    ]);
+    const ownedTeams = await listOwnedTeams(auth.userId);
     if (!ownedTeams.documents.length) break;
     for (const team of ownedTeams.documents) {
       await deleteMatching(COLLECTIONS.decisions, 'teamId', team.$id);
@@ -93,6 +112,8 @@ export async function DELETE(request: Request) {
       databaseId: DATABASE_ID,
       tableId: COLLECTIONS.apiRequests,
       queries: [Query.equal('userId', auth.userId)],
+    }).catch((error) => {
+      if (!isMissingTelemetryTable(error)) throw error;
     }),
     deleteMatching(COLLECTIONS.contextRules, 'userId', auth.userId),
     deleteMatching(COLLECTIONS.patterns, 'userId', auth.userId),
@@ -104,6 +125,7 @@ export async function DELETE(request: Request) {
      user can sign in to retry rather than being locked out. */
   await adminUsers.delete({ userId: auth.userId });
   await Promise.all([
+    deleteMatching(COLLECTIONS.apiKeys, 'userId', auth.userId),
     adminDb.deleteDocument(DATABASE_ID, COLLECTIONS.users, auth.userId).catch(() => {}),
     deleteWaitlistRequests(user.email),
   ]);

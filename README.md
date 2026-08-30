@@ -24,6 +24,8 @@ Open <http://localhost:3000>.
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
+| `npm run schema:migrate` | Idempotently prepare Appwrite enums, encrypted field sizes and server tables |
+| `npm run schema:verify` | Verify Appwrite collections, tables, fields, enums and indexes |
 
 ## Routes
 
@@ -96,6 +98,13 @@ and tenant-bound blind indexes; authenticated server routes decrypt values for t
 and dashboard. This protects database exports and console access, but it is not
 zero-knowledge encryption: a production operator with both database access and the
 Vercel encryption keys can decrypt data.
+
+Production startup fails closed unless data encryption is `encrypted`, API key storage
+is `hashed`, and dedicated data-index and session-signing secrets are configured. Run
+`npm run schema:verify` before deployment; it reports every missing collection, table,
+field, enum value, capacity and query index without mutating Appwrite.
+`BRAINFEATHER_RATE_LIMIT_SECRET` must also be a dedicated 32+ character secret; public
+waitlist throttling stores only an HMAC bucket, never the raw network address.
 
 Use three rollout states:
 

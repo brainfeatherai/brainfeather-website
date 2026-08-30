@@ -7,7 +7,8 @@ export async function hasProfile(userId: string): Promise<boolean> {
   try {
     await adminDb.getDocument(DATABASE_ID, COLLECTIONS.users, userId);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as { code?: number }).code === 404) return false;
+    throw error;
   }
 }

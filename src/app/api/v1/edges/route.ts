@@ -17,7 +17,11 @@
 import { Query } from 'node-appwrite';
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { adminDb, DATABASE_ID, COLLECTIONS } from '@/lib/server/appwrite-admin';
-import { createEdge } from '@/lib/server/memory-store';
+import {
+  createOwnedEntityEdge,
+  publicEdge,
+  type EdgeDoc,
+} from '@/lib/server/memory-store';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { EDGE_TYPES, oneOf, readJson, str } from '@/lib/server/validate';
@@ -36,7 +40,8 @@ async function listEdges(request: Request) {
     Query.limit(limit),
   ]);
 
-  return Response.json({ edges: res.documents, count: res.documents.length });
+  const edges = res.documents.map((edge) => publicEdge(edge as unknown as EdgeDoc));
+  return Response.json({ edges, count: edges.length });
 }
 
 async function createEdgeRoute(request: Request) {
@@ -58,6 +63,9 @@ async function createEdgeRoute(request: Request) {
 
   const type = oneOf(body.type, EDGE_TYPES, 'type');
   if (!type.ok) return fail(400, type.error);
+  if (type.value === 'mentioned_in') {
+    return fail(400, 'mentioned_in edges are managed by the memory pipeline.');
+  }
 
   let weight = 0.5;
   if (body.weight !== undefined) {
@@ -71,13 +79,16 @@ async function createEdgeRoute(request: Request) {
   }
 
   try {
-    const edge = await createEdge(
+    const edge = await createOwnedEntityEdge(
       auth.userId,
       sourceId.value,
       targetId.value,
       type.value,
       weight,
     );
+    if (!edge) {
+      return fail(400, 'sourceId and targetId must be entities owned by this account.');
+    }
     return Response.json({ edge });
   } catch (err) {
     reportServerError(err, {

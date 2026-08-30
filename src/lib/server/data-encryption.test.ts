@@ -12,6 +12,8 @@ import {
 const ORIGINAL_MODE = process.env.BRAINFEATHER_DATA_ENCRYPTION;
 const ORIGINAL_KEYS = process.env.BRAINFEATHER_DATA_ENCRYPTION_KEYS;
 const ORIGINAL_INDEX_KEY = process.env.BRAINFEATHER_DATA_INDEX_KEY;
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+const mutableEnv = process.env as Record<string, string | undefined>;
 
 const firstKey = randomBytes(32).toString('base64url');
 const secondKey = randomBytes(32).toString('base64url');
@@ -37,6 +39,8 @@ test.after(() => {
   else process.env.BRAINFEATHER_DATA_ENCRYPTION_KEYS = ORIGINAL_KEYS;
   if (ORIGINAL_INDEX_KEY === undefined) delete process.env.BRAINFEATHER_DATA_INDEX_KEY;
   else process.env.BRAINFEATHER_DATA_INDEX_KEY = ORIGINAL_INDEX_KEY;
+  if (ORIGINAL_NODE_ENV === undefined) delete mutableEnv.NODE_ENV;
+  else mutableEnv.NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 test('encrypts with randomized authenticated envelopes and decrypts losslessly', () => {
@@ -89,6 +93,15 @@ test('reads legacy plaintext and leaves writes plaintext while disabled', () => 
   process.env.BRAINFEATHER_DATA_ENCRYPTION = 'plaintext';
   assert.equal(decryptStoredValue('legacy value', context), 'legacy value');
   assert.equal(encryptStoredValue('legacy value', context), 'legacy value');
+});
+
+test('refuses an implicit plaintext mode in production runtimes', () => {
+  mutableEnv.NODE_ENV = 'production';
+  delete process.env.BRAINFEATHER_DATA_ENCRYPTION;
+  assert.throws(
+    () => encryptStoredValue('must not leak', context),
+    /must be explicit in production runtimes/,
+  );
 });
 
 test('compatibility mode reads both formats, queries both indexes, and writes plaintext', () => {

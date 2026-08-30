@@ -257,3 +257,22 @@ export function memoryIsVisibleAt(
   if (memory.status === 'invalid' && !hasExplicitValidityEnd(memory.metadata)) return false;
   return isValidAt(normalizeMemoryMetadata(memory.metadata, memory.$createdAt), referenceAtMs);
 }
+
+export function memoryIsRetrievable(
+  memory: {
+    status: 'active' | 'invalid';
+    metadata?: string;
+    $createdAt: string;
+    projectId?: string | null;
+  },
+  options: {
+    projectId?: string;
+    strictScope?: boolean;
+    referenceAtMs: number;
+  },
+): boolean {
+  if (!memoryIsVisibleAt(memory, options.referenceAtMs)) return false;
+  if (!options.projectId) return true;
+  if (memory.projectId === options.projectId) return true;
+  return !options.strictScope && !memory.projectId;
+}

@@ -7,7 +7,7 @@ import {
   findDuplicate,
   junkReason,
   planSupersedes,
-} from './think.ts';
+} from './memory-policy.ts';
 
 test('rejects greetings, filler, and transient agent chatter', () => {
   assert.equal(junkReason('ok'), 'too short to be a durable fact');

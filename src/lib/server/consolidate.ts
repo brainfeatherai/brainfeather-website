@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { jaccardSimilarity, think, type Decision } from './think.ts';
+import { think, type Decision } from './think.ts';
+import { jaccardSimilarity } from './memory-policy.ts';
 import type { MemoryDoc } from './memory-store.ts';
 import { listAllActive } from './memory-store.ts';
 

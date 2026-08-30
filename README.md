@@ -142,6 +142,17 @@ Run the deterministic regression suite with:
 npm run eval:retrieval
 ```
 
+RepoMemBench extends that retrieval smoke test into a coding-memory baseline covering
+scope isolation, stale truth, write filtering, supersession, evidence, context budgets,
+and latency:
+
+```bash
+npm run bench:repo-memory
+```
+
+See [`docs/repomembench.md`](docs/repomembench.md) for scenarios, metrics, known gaps,
+and the future Mem0/Zep comparison protocol.
+
 The report compares the previous concept-only ranker with the hybrid ranker using MRR,
 Hit@1, Hit@3, negative-query abstention, and in-process latency. This small fixture suite
 is a release regression gate, not a substitute for LoCoMo, LongMemEval, BEAM, or a claim

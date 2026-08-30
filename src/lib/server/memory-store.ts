@@ -19,6 +19,7 @@ import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin.ts';
 import { rankMemories } from './retrieval-ranking.ts';
 import {
   invalidateMemoryMetadata,
+  memoryIsRetrievable,
   memoryIsVisibleAt,
   normalizeMemoryMetadata,
   reviveMemoryMetadata,
@@ -452,7 +453,13 @@ export async function listActive(
     visible.push(
       ...(page.documents as unknown as MemoryDoc[])
         .map(decryptedMemory)
-        .filter((memory) => memoryIsVisibleAt(memory, referenceAtMs)),
+        .filter((memory) =>
+          memoryIsRetrievable(memory, {
+            projectId: opts.projectId,
+            strictScope: opts.strictScope,
+            referenceAtMs,
+          }),
+        ),
     );
     if (!opts.all && visible.length >= limit) return visible.slice(0, limit);
     if (page.documents.length < pageSize) return opts.all ? visible : visible.slice(0, limit);

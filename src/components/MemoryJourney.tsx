@@ -40,7 +40,7 @@ function ConnectVisual() {
               {`  `}<span className="text-[#8cc9ff]">&quot;mcpServers&quot;</span>: {`{`}{"\n"}
               {`    `}<span className="text-[#8cc9ff]">&quot;brainfeather&quot;</span>: {`{`}{"\n"}
               {`      `}<span className="text-[#8cc9ff]">&quot;command&quot;</span>: <span className="text-[#f5c56b]">&quot;npx&quot;</span>,{"\n"}
-              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp@1.5.2&quot;</span>]{"\n"}
+              {`      `}<span className="text-[#8cc9ff]">&quot;args&quot;</span>: [<span className="text-[#f5c56b]">&quot;-y&quot;</span>, <span className="text-[#f5c56b]">&quot;@brainfeather/mcp@1.6.1&quot;</span>]{"\n"}
               {`    `}{`}`}{"\n"}
               {`  `}{`}`}{"\n"}
               <span className="text-mint">{`}`}</span>

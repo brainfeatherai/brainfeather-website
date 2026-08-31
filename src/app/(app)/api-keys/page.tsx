@@ -17,7 +17,7 @@ function mcpConfig(token: string) {
       mcpServers: {
         brainfeather: {
           command: "npx",
-          args: ["-y", "@brainfeather/mcp@1.5.2"],
+          args: ["-y", "@brainfeather/mcp@1.6.1"],
           env: { BRAINFEATHER_API_KEY: token },
         },
       },
@@ -220,7 +220,7 @@ function ApiKeysView() {
             </p>
           </div>
           <code className="shrink-0 rounded-lg border border-white/[0.08] bg-paper-dim px-4 py-3 font-mono text-[11px] text-forest/65">
-            npx -y @brainfeather/mcp@1.5.2 init
+            npx -y @brainfeather/mcp@1.6.1 init
           </code>
         </div>
       </section>

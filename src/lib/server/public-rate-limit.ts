@@ -4,14 +4,36 @@ import { createHmac } from 'node:crypto';
 import { Query, type Models } from 'node-appwrite';
 import { adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin.ts';
 
-/* Dedicated secret only. The previous fallback to
-   BRAINFEATHER_SESSION_SECRET meant one leaked value covered both
-   session signing and rate-limit bucketing; production-config.ts now
-   requires this variable on its own. */
+let warnedAboutSharedSecret = false;
+
+/* Prefers a dedicated secret so one leaked value does not cover both
+   session signing and rate-limit bucketing.
+
+   The fallback to BRAINFEATHER_SESSION_SECRET stays because
+   BRAINFEATHER_RATE_LIMIT_SECRET is scoped to Production only in Vercel,
+   while the session secret is scoped to Production and Preview. Without
+   the fallback this throws on every preview deployment, and since the
+   waitlist and register routes rate-limit before doing anything else,
+   that fails those forms closed on exactly the deployments meant for
+   review. Scope the dedicated secret to Preview and this fallback stops
+   being reachable. */
 function rateLimitSecret(): string {
-  const secret = process.env.BRAINFEATHER_RATE_LIMIT_SECRET || '';
-  if (secret.length < 32) throw new Error('Public rate-limit signing is not configured.');
-  return secret;
+  const dedicated = process.env.BRAINFEATHER_RATE_LIMIT_SECRET || '';
+  if (dedicated.length >= 32) return dedicated;
+
+  const shared = process.env.BRAINFEATHER_SESSION_SECRET || '';
+  if (shared.length >= 32) {
+    if (!warnedAboutSharedSecret) {
+      warnedAboutSharedSecret = true;
+      console.warn(
+        '[brainfeather] Rate-limit bucketing is reusing BRAINFEATHER_SESSION_SECRET. ' +
+          'Set BRAINFEATHER_RATE_LIMIT_SECRET (32+ chars) for this environment.',
+      );
+    }
+    return shared;
+  }
+
+  throw new Error('Public rate-limit signing is not configured.');
 }
 
 export function rateLimitRowId(

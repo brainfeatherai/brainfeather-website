@@ -65,8 +65,19 @@ export function validateProductionConfiguration(
   if ((env.BRAINFEATHER_RATE_LIMIT_SECRET?.length ?? 0) < 32) {
     errors.push('BRAINFEATHER_RATE_LIMIT_SECRET must contain at least 32 characters');
   }
+  /* Warns, and deliberately does not join `errors`. This function runs at
+     server boot from instrumentation.ts, so anything pushed here takes the
+     site down. WAITLIST_APPROVAL_SECRET is not currently set in Vercel —
+     approval links are signed with APPWRITE_API_KEY via the documented
+     fallback in waitlist-approval.ts — so promoting this to a hard error
+     would turn a hardening task into an outage. Set the variable, confirm
+     the warning stops, then make it fatal. */
   if ((env.WAITLIST_APPROVAL_SECRET?.length ?? 0) < 32) {
-    errors.push('WAITLIST_APPROVAL_SECRET must contain at least 32 characters');
+    console.warn(
+      '[brainfeather] WAITLIST_APPROVAL_SECRET is not set (needs 32+ characters). ' +
+        'Waitlist approval links are being signed with APPWRITE_API_KEY, so rotating ' +
+        'that key will invalidate every outstanding approval email.',
+    );
   }
 
   if (errors.length) {

@@ -56,25 +56,83 @@ test('rejects tampered and expired review links', () => {
   );
 });
 
-/* The Appwrite master key is no longer accepted as a signing secret.
-   Asserting rejection — rather than deleting the case — is what stops
-   the fallback from being reintroduced as a convenience later. */
-test('rejects links signed with the Appwrite master key', () => {
+const legacySignature = (rowId: string, email: string, expires: number): string =>
+  createHmac('sha256', process.env.APPWRITE_API_KEY!)
+    .update(`${CONTEXT}\0${rowId}\0${email}\0${expires}`)
+    .digest('base64url');
+
+/* The cutover, and the reason the legacy branch cannot be deleted yet:
+   production has been signing with APPWRITE_API_KEY because
+   WAITLIST_APPROVAL_SECRET was never set. Links live 30 days, so on the
+   day the dedicated secret is introduced there are real approval emails
+   in real inboxes carrying Appwrite-key signatures. Rejecting them would
+   silently strand those applicants. */
+test('still accepts Appwrite-key links during the cutover window', () => {
   const rowId = 'request_legacy';
   const email = 'person@example.com';
   const expires = Date.parse('2026-10-15T00:00:00.000Z');
-  const legacy = createHmac('sha256', process.env.APPWRITE_API_KEY!)
-    .update(`${CONTEXT}\0${rowId}\0${email}\0${expires}`)
-    .digest('base64url');
 
   assert.equal(
     verifyWaitlistApprovalLink({
       rowId,
       email,
       expires: String(expires),
-      signature: legacy,
+      signature: legacySignature(rowId, email, expires),
       now: Date.parse('2026-09-15T00:00:00.000Z'),
     }),
+    true,
+  );
+});
+
+/* The other half of the contract: the fallback self-retires. Without
+   this, the Appwrite master key stays a valid signing key indefinitely. */
+test('rejects Appwrite-key links once the cutover window closes', () => {
+  const rowId = 'request_legacy';
+  const email = 'person@example.com';
+  const expires = Date.parse('2026-12-10T00:00:00.000Z');
+
+  assert.equal(
+    verifyWaitlistApprovalLink({
+      rowId,
+      email,
+      expires: String(expires),
+      signature: legacySignature(rowId, email, expires),
+      now: Date.parse('2026-11-20T00:00:00.000Z'),
+    }),
     false,
+  );
+});
+
+/* Production today: no dedicated secret, so signing must fall back rather
+   than throw. This is the case whose absence would have taken the site
+   down — approval emails could not be generated at all. */
+test('signs and verifies with the Appwrite key when no dedicated secret exists', () => {
+  delete process.env.WAITLIST_APPROVAL_SECRET;
+  const now = 1_800_000_000_000;
+  const original = console.warn;
+  console.warn = () => {};
+  try {
+    const url = new URL(createWaitlistApprovalLink('request_123', 'person@example.com', now));
+    assert.equal(
+      verifyWaitlistApprovalLink({
+        rowId: 'request_123',
+        email: 'person@example.com',
+        expires: url.searchParams.get('expires')!,
+        signature: url.searchParams.get('signature')!,
+        now,
+      }),
+      true,
+    );
+  } finally {
+    console.warn = original;
+  }
+});
+
+test('throws only when neither signing secret is available', () => {
+  delete process.env.WAITLIST_APPROVAL_SECRET;
+  delete process.env.APPWRITE_API_KEY;
+  assert.throws(
+    () => createWaitlistApprovalLink('request_123', 'person@example.com'),
+    /signing is unavailable/,
   );
 });

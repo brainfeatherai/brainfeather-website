@@ -52,12 +52,20 @@ async function searchMemories(request: Request) {
     limit: limitOf(params.get('limit'), 10, 25),
     referenceAtMs,
   });
+  /* Explanation is on by default; includeExplanations=false opts out for
+     tight token budgets. Evidence stays strictly opt-in — it costs an
+     extra field per record and most callers never read it. */
+  const includeExplanations = params.get('includeExplanations') !== 'false';
   const includeEvidence = params.get('includeEvidence') === 'true';
-  const responseMemories = result.memories.map((memory) => ({
-    ...memory,
-    metadata: metadataWithoutEvidenceDigest(memory.metadata),
-    ...(includeEvidence ? { evidence: memoryEvidence(memory.metadata) ?? null } : {}),
-  }));
+  const responseMemories = result.memories.map((memory) => {
+    const { explanation, metadata, ...fields } = memory;
+    return {
+      ...fields,
+      metadata: metadataWithoutEvidenceDigest(metadata),
+      ...(includeExplanations ? { explanation } : {}),
+      ...(includeEvidence ? { evidence: memoryEvidence(metadata) ?? null } : {}),
+    };
+  });
 
   return Response.json({
     memories: responseMemories,

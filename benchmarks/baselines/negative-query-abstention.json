@@ -1,0 +1,8 @@
+{
+  "benchmark": "0.3.0",
+  "baseline": "brainfeather-1.5.2",
+  "extends": "branch-task-memory.json",
+  "protected": {
+    "retrieval.abstentionAccuracy": 1
+  }
+}

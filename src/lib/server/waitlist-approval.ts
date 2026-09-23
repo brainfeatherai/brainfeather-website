@@ -12,15 +12,39 @@ function isWaitlistId(value: string): boolean {
 }
 
 function signingSecret(): string {
-  const secret = process.env.WAITLIST_APPROVAL_SECRET ?? process.env.APPWRITE_API_KEY;
-  if (!secret) throw new Error('[brainfeather] Waitlist approval signing is unavailable.');
+  /* Dedicated secret only, never APPWRITE_API_KEY: rotating the Appwrite
+     master credential is routine, and it would silently invalidate every
+     outstanding 30-day approval email with no error anywhere. Production
+     boot enforces the same requirement via production-config.ts. */
+  const secret = process.env.WAITLIST_APPROVAL_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      '[brainfeather] WAITLIST_APPROVAL_SECRET must be a dedicated secret of at least 32 characters.',
+    );
+  }
   return secret;
 }
 
-function signature(rowId: string, email: string, expires: number): string {
-  return createHmac('sha256', signingSecret())
+function signatureWithSecret(
+  secret: string,
+  rowId: string,
+  email: string,
+  expires: number,
+): string {
+  return createHmac('sha256', secret)
     .update(`${CONTEXT}\0${rowId}\0${normalizeWaitlistEmail(email)}\0${expires}`)
     .digest('base64url');
+}
+
+function signature(rowId: string, email: string, expires: number): string {
+  return signatureWithSecret(signingSecret(), rowId, email, expires);
+}
+
+function signaturesMatch(expected: string, actual: string): boolean {
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+  return expectedBuffer.length === actualBuffer.length &&
+    timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
 export function createWaitlistApprovalLink(
@@ -56,7 +80,10 @@ export function verifyWaitlistApprovalLink(input: {
     return false;
   }
 
-  const expected = Buffer.from(signature(input.rowId, input.email, expires));
-  const actual = Buffer.from(input.signature);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
+  /* One secret, one code path. The migration fallback that verified
+     links signed with APPWRITE_API_KEY is gone: links live 30 days, the
+     dedicated secret has been in place far longer than that, so every
+     outstanding link is already signed with it. Keeping the fallback
+     only kept the Appwrite master credential inside a crypto path. */
+  return signaturesMatch(signature(input.rowId, input.email, expires), input.signature);
 }

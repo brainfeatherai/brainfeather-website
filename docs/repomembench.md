@@ -58,6 +58,35 @@ isolation to protected capabilities without rewriting the historical artifact.
 | Task leakage | 0% | 0% |
 | Task-specific ranking | 100% | 100% |
 
+## v0.3 capabilities
+
+| Metric | Current | Protected target |
+| --- | ---: | ---: |
+| Negative-query abstention | 100% | 100% |
+
+Negative-query abstention was the last open v0.1 target. The gap was not the
+over-matching of generic terms recorded in the old note: `billing invoice
+policy` always abstained correctly. The single failure was `native ios
+deployment target`, which matched only the generic term `deployment` while
+`native`, `ios`, and `target` appeared nowhere in the corpus — enough to pass
+a per-memory eligibility check that asked only whether *some* signal fired.
+
+Ranking now abstains when the candidate set collectively matches too little of
+the query's IDF mass, measured per term so a term counts as known only through
+its own literal or concept-sibling matches. That distinction is what separates
+ignorance from concept recall, where `how do we handle auth` legitimately
+returns an RLS memory with no literal overlap at all.
+
+`benchmarks/baselines/negative-query-abstention.json` promotes the metric from
+an improvement target to a protected one. Until 0.3.0 the gate compared it
+against the 66.7% *baseline*, so the suite exited 0 even when abstention
+regressed to the old behaviour; it is now pinned to 100%.
+
+The threshold is calibrated against these fixtures rather than derived from
+theory — the weakest true positive covers 0.234 of query mass and the false
+positive covers 0.138. Widen the fixture set before treating it as a general
+constant.
+
 ## Scope hierarchy
 
 Repository memories are inherited throughout a repository. Branch memories are

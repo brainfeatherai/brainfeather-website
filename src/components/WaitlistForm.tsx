@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { joinWaitlist, type WaitlistState } from "@/app/actions";
 import { mailto } from "@/lib/site";
 import Link from "next/link";
-import { usePublicAccess } from "./PublicAccessLink";
+import { usePublicAccess } from "./PublicAccessStore";
 
 /* ────────────────────────────────────────────────────────────────
    Email capture for the closing section.

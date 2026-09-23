@@ -4,11 +4,12 @@ import { createHmac } from 'node:crypto';
 import { Query, type Models } from 'node-appwrite';
 import { adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin.ts';
 
+/* Dedicated secret only. The previous fallback to
+   BRAINFEATHER_SESSION_SECRET meant one leaked value covered both
+   session signing and rate-limit bucketing; production-config.ts now
+   requires this variable on its own. */
 function rateLimitSecret(): string {
-  const secret =
-    process.env.BRAINFEATHER_RATE_LIMIT_SECRET ||
-    process.env.BRAINFEATHER_SESSION_SECRET ||
-    '';
+  const secret = process.env.BRAINFEATHER_RATE_LIMIT_SECRET || '';
   if (secret.length < 32) throw new Error('Public rate-limit signing is not configured.');
   return secret;
 }

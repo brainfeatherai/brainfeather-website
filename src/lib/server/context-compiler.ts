@@ -1,4 +1,4 @@
-import { rankMemories } from './retrieval-ranking.ts';
+import { rankMemoriesWithExplanations, type MemoryExplanation } from './retrieval-ranking.ts';
 import { memoryEvidence, type MemoryEvidence } from './memory-temporal.ts';
 
 export type ContextMemory = {
@@ -17,6 +17,11 @@ export type CompiledContext = {
   decisions: string[];
   patterns: string[];
   counts: { facts: number; decisions: number; patterns: number; total: number };
+  explanations?: {
+    facts: (MemoryExplanation | null)[];
+    decisions: (MemoryExplanation | null)[];
+    patterns: (MemoryExplanation | null)[];
+  };
   evidence?: {
     facts: (MemoryEvidence | null)[];
     decisions: (MemoryEvidence | null)[];
@@ -42,19 +47,34 @@ export function recallFetchLimit(maxTokens: number): number {
 
 export function compileContext<T extends ContextMemory>(
   memories: readonly T[],
-  options: { query?: string; maxTokens: number; asOfMs?: number; includeEvidence?: boolean },
+  options: {
+    query?: string;
+    maxTokens: number;
+    asOfMs?: number;
+    includeExplanations?: boolean;
+    includeEvidence?: boolean;
+  },
 ): CompiledContext {
   const grouped = memories.filter((memory) => groupOf(memory.category) !== null);
-  const relevant = rankMemories(grouped, options.query ?? '', {
+  const query = options.query?.trim() ?? '';
+  const relevantHits = rankMemoriesWithExplanations(grouped, query, {
     limit: grouped.length,
     asOfMs: options.asOfMs,
   });
-  const newest = rankMemories(grouped, '', {
-    limit: grouped.length,
-    asOfMs: options.asOfMs,
-  });
-  const relevantIds = new Set(relevant.map((memory) => memory.$id));
-  const ranked = [...relevant, ...newest.filter((memory) => !relevantIds.has(memory.$id))];
+  /* A non-empty query with no relevant hits is an intentional abstention.
+     Known queries retain the existing newest-first tail for category diversity,
+     but an unknown topic must not be answered with unrelated recent memories. */
+  const relevantIds = new Set(relevantHits.map(({ memory }) => memory.$id));
+  const newestHits = rankMemoriesWithExplanations(
+    grouped.filter((memory) => !relevantIds.has(memory.$id)),
+    '',
+    { limit: grouped.length, asOfMs: options.asOfMs },
+  );
+  const hits = query && relevantHits.length === 0
+    ? []
+    : [...relevantHits, ...newestHits];
+  const ranked = hits.map(({ memory }) => memory);
+  const explanationOf = new Map(hits.map(({ memory, explanation }) => [memory.$id, explanation]));
   const selected: T[] = [];
   const used = new Set<string>();
   let remaining = Math.max(0, Math.floor(options.maxTokens));
@@ -69,7 +89,7 @@ export function compileContext<T extends ContextMemory>(
     return true;
   };
 
-  if (options.query && relevant[0]) include(relevant[0]);
+  if (options.query && ranked[0]) include(ranked[0]);
 
   /* Reserve one slot per available group before filling by relevance. */
   for (const group of ['decisions', 'patterns', 'facts'] as const) {
@@ -80,8 +100,9 @@ export function compileContext<T extends ContextMemory>(
   }
   for (const memory of ranked) include(memory);
 
-  const contents = (group: Group) =>
-    selected.filter((memory) => groupOf(memory.category) === group).map((memory) => memory.content);
+  const groupRows = (group: Group) =>
+    selected.filter((memory) => groupOf(memory.category) === group);
+  const contents = (group: Group) => groupRows(group).map((memory) => memory.content);
   const facts = contents('facts');
   const decisions = contents('decisions');
   const patterns = contents('patterns');
@@ -96,18 +117,26 @@ export function compileContext<T extends ContextMemory>(
       patterns: patterns.length,
       total: selected.length,
     },
+    /* Same order as the content arrays, so callers zip them by index. */
+    ...(options.includeExplanations
+      ? {
+          explanations: {
+            facts: groupRows('facts').map((memory) => explanationOf.get(memory.$id) ?? null),
+            decisions: groupRows('decisions').map((memory) => explanationOf.get(memory.$id) ?? null),
+            patterns: groupRows('patterns').map((memory) => explanationOf.get(memory.$id) ?? null),
+          },
+        }
+      : {}),
     ...(options.includeEvidence
       ? {
           evidence: {
-            facts: selected
-              .filter((memory) => groupOf(memory.category) === 'facts')
-              .map((memory) => memoryEvidence(memory.metadata) ?? null),
-            decisions: selected
-              .filter((memory) => groupOf(memory.category) === 'decisions')
-              .map((memory) => memoryEvidence(memory.metadata) ?? null),
-            patterns: selected
-              .filter((memory) => groupOf(memory.category) === 'patterns')
-              .map((memory) => memoryEvidence(memory.metadata) ?? null),
+            facts: groupRows('facts').map((memory) => memoryEvidence(memory.metadata) ?? null),
+            decisions: groupRows('decisions').map(
+              (memory) => memoryEvidence(memory.metadata) ?? null,
+            ),
+            patterns: groupRows('patterns').map(
+              (memory) => memoryEvidence(memory.metadata) ?? null,
+            ),
           },
         }
       : {}),

@@ -35,7 +35,24 @@ test('accepts explicit encrypted production configuration', () => {
       BRAINFEATHER_API_KEY_STORAGE: 'hashed',
       BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
       BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+      WAITLIST_APPROVAL_SECRET: 'approval-secret-with-at-least-32-characters',
     }),
+  );
+});
+
+test('rejects production without a dedicated waitlist approval secret', () => {
+  assert.throws(
+    () =>
+      validateProductionConfiguration({
+        NODE_ENV: 'production',
+        BRAINFEATHER_DATA_ENCRYPTION: 'encrypted',
+        BRAINFEATHER_DATA_ENCRYPTION_KEYS: `v1:${key}`,
+        BRAINFEATHER_DATA_INDEX_KEY: key,
+        BRAINFEATHER_API_KEY_STORAGE: 'hashed',
+        BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
+        BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+      }),
+    /WAITLIST_APPROVAL_SECRET/,
   );
 });
 
@@ -46,6 +63,7 @@ test('rejects duplicate or invalid encryption key ids at startup', () => {
     BRAINFEATHER_API_KEY_STORAGE: 'hashed',
     BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
     BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+    WAITLIST_APPROVAL_SECRET: 'approval-secret-with-at-least-32-characters',
   };
   assert.throws(() => validateProductionConfiguration({
     ...base,

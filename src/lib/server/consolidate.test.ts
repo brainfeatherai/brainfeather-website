@@ -84,3 +84,35 @@ test('keeps similar memories from different projects in separate clusters', () =
   );
   assert.equal(relatedMemoryClusters(memories).length, 1);
 });
+
+test('keeps similar memories from sibling branches and tasks in separate clusters', () => {
+  const base = {
+    $createdAt: '2026-08-28T12:00:00.000Z',
+    userId: 'user-1',
+    source: 'cursor',
+    category: 'code',
+    status: 'active' as const,
+    projectId: 'alpha',
+  };
+  const memories = [
+    { ...base, $id: 'main', content: 'This project uses Vitest for unit tests.', branch: 'main' },
+    {
+      ...base,
+      $id: 'feature',
+      content: 'This project uses Vitest for unit tests in CI.',
+      branch: 'feature/testing',
+    },
+    {
+      ...base,
+      $id: 'task-a',
+      content: 'This project uses Vitest for unit tests in CI.',
+      branch: 'main',
+      taskId: 'task-a',
+    },
+  ];
+
+  assert.equal(memoriesByProject(memories).length, 3);
+  assert.deepEqual(memoriesByProject(memories, { projectId: 'alpha', branch: 'main' })[0], [
+    memories[0],
+  ]);
+});

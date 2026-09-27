@@ -45,6 +45,8 @@ test('round-trips encrypted memory documents without leaking plaintext fields', 
     source: 'cursor',
     title: 'Testing',
     projectId: 'proj-1',
+    branch: 'feature/auth',
+    taskId: 'task-42',
     metadata: JSON.stringify({ memoryType: 'pattern' }),
   });
 
@@ -72,7 +74,9 @@ test('round-trips encrypted memory documents without leaking plaintext fields', 
   assert.equal(decoded.content, 'This project uses Vitest.');
   assert.equal(decoded.title, 'Testing');
   assert.equal(decoded.projectId, 'proj-1');
-  assert.match(decoded.metadata ?? '', /memoryType/);
+  assert.equal(decoded.branch, 'feature/auth');
+  assert.equal(decoded.taskId, 'task-42');
+  assert.equal(JSON.parse(decoded.metadata ?? '{}').mt, 'pattern');
 });
 
 test('stores plaintext when encryption is disabled', () => {

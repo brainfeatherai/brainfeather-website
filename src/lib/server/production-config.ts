@@ -6,7 +6,29 @@ export function validateProductionConfiguration(
   const productionDeployment =
     env.VERCEL_ENV === 'production' ||
     (env.NODE_ENV === 'production' && env.VERCEL !== '1');
-  if (!productionDeployment) return;
+
+  /* Previews are exempt from the checks below so a branch can boot
+     without production secrets. That exemption is keyed on deployment
+     type, not on which database is being written to — so a preview
+     sharing the production Appwrite project would write plaintext rows
+     and plaintext blind indexes into an encrypted store, which is
+     expensive to detect and worse to repair.
+
+     Whether preview and production share NEXT_PUBLIC_APPWRITE_PROJECT_ID
+     is a dashboard fact this code cannot read, so this warns rather than
+     throws: failing closed here would break every preview deployment,
+     including safe ones. Confirm the env scoping in Vercel; if previews
+     do share the production project, they need their own project. */
+  if (!productionDeployment) {
+    if (env.VERCEL_ENV === 'preview' && env.BRAINFEATHER_DATA_ENCRYPTION !== 'encrypted') {
+      console.warn(
+        '[brainfeather] Preview deployment is running with data encryption disabled. ' +
+          'If this deployment shares the production Appwrite project, it will write ' +
+          'plaintext rows into the encrypted store.',
+      );
+    }
+    return;
+  }
 
   const errors: string[] = [];
   if (env.BRAINFEATHER_DATA_ENCRYPTION !== 'encrypted') {
@@ -42,6 +64,20 @@ export function validateProductionConfiguration(
   }
   if ((env.BRAINFEATHER_RATE_LIMIT_SECRET?.length ?? 0) < 32) {
     errors.push('BRAINFEATHER_RATE_LIMIT_SECRET must contain at least 32 characters');
+  }
+  /* Warns, and deliberately does not join `errors`. This function runs at
+     server boot from instrumentation.ts, so anything pushed here takes the
+     site down. WAITLIST_APPROVAL_SECRET is not currently set in Vercel —
+     approval links are signed with APPWRITE_API_KEY via the documented
+     fallback in waitlist-approval.ts — so promoting this to a hard error
+     would turn a hardening task into an outage. Set the variable, confirm
+     the warning stops, then make it fatal. */
+  if ((env.WAITLIST_APPROVAL_SECRET?.length ?? 0) < 32) {
+    console.warn(
+      '[brainfeather] WAITLIST_APPROVAL_SECRET is not set (needs 32+ characters). ' +
+        'Waitlist approval links are being signed with APPWRITE_API_KEY, so rotating ' +
+        'that key will invalidate every outstanding approval email.',
+    );
   }
 
   if (errors.length) {

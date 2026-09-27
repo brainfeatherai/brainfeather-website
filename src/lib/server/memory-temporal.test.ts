@@ -4,6 +4,9 @@ import {
   invalidateMemoryMetadata,
   isFileEvidenceDigest,
   isValidAt,
+  memoryIsRetrievable,
+  memoryMatchesScope,
+  memoryScopeOf,
   memoryIsVisibleAt,
   memoryEvidence,
   metadataWithoutEvidenceDigest,
@@ -115,6 +118,110 @@ test('hides active rows before validFrom and after validTo', () => {
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-01-15T00:00:00Z')), false);
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-02-15T00:00:00Z')), true);
   assert.equal(memoryIsVisibleAt(row, Date.parse('2026-03-15T00:00:00Z')), false);
+});
+
+test('enforces strict project and temporal retrieval boundaries', () => {
+  const referenceAtMs = Date.parse('2026-02-15T00:00:00Z');
+  const scoped = {
+    status: 'active' as const,
+    $createdAt: CREATED,
+    projectId: 'github.com/acme/api',
+  };
+  assert.equal(
+    memoryIsRetrievable(scoped, {
+      projectId: 'github.com/acme/api',
+      strictScope: true,
+      referenceAtMs,
+    }),
+    true,
+  );
+  assert.equal(
+    memoryIsRetrievable(scoped, {
+      projectId: 'github.com/acme/storefront',
+      strictScope: true,
+      referenceAtMs,
+    }),
+    false,
+  );
+  assert.equal(
+    memoryIsRetrievable(
+      { ...scoped, metadata: JSON.stringify({ vt: '2026-02-01T00:00:00Z' }) },
+      { projectId: scoped.projectId, strictScope: true, referenceAtMs },
+    ),
+    false,
+  );
+});
+
+test('includes unscoped memories only in compatibility scope', () => {
+  const memory = { status: 'active' as const, $createdAt: CREATED };
+  const options = {
+    projectId: 'github.com/acme/api',
+    referenceAtMs: Date.parse('2026-02-15T00:00:00Z'),
+  };
+  assert.equal(memoryIsRetrievable(memory, options), true);
+  assert.equal(memoryIsRetrievable(memory, { ...options, strictScope: true }), false);
+});
+
+test('applies repository, branch, and task scopes as hierarchical overlays', () => {
+  const referenceAtMs = Date.parse('2026-02-15T00:00:00Z');
+  const options = {
+    projectId: 'github.com/acme/api',
+    branch: 'feature/auth',
+    taskId: 'task-42',
+    strictScope: true,
+    referenceAtMs,
+  };
+  const row = (metadata?: Record<string, string>) => ({
+    status: 'active' as const,
+    $createdAt: CREATED,
+    projectId: options.projectId,
+    metadata: metadata ? JSON.stringify(metadata) : undefined,
+  });
+
+  assert.equal(memoryIsRetrievable(row(), options), true);
+  assert.equal(memoryIsRetrievable(row({ b: options.branch }), options), true);
+  assert.equal(memoryIsRetrievable(row({ tk: options.taskId }), options), true);
+  assert.equal(
+    memoryIsRetrievable(row({ b: options.branch, tk: options.taskId }), options),
+    true,
+  );
+  assert.equal(memoryIsRetrievable(row({ b: 'feature/other' }), options), false);
+  assert.equal(memoryIsRetrievable(row({ tk: 'task-99' }), options), false);
+  assert.equal(
+    memoryIsRetrievable(row({ b: 'feature/other', tk: options.taskId }), options),
+    false,
+  );
+});
+
+test('normalizes compact branch and task scope metadata', () => {
+  const raw = mergeMemoryMetadata(undefined, {
+    branch: 'feature/auth',
+    taskId: 'task-42',
+  });
+  assert.deepEqual(memoryScopeOf({ projectId: 'repo', metadata: raw }), {
+    projectId: 'repo',
+    branch: 'feature/auth',
+    taskId: 'task-42',
+  });
+  assert.deepEqual(
+    {
+      branch: normalizeMemoryMetadata(raw, CREATED).branch,
+      taskId: normalizeMemoryMetadata(raw, CREATED).taskId,
+    },
+    { branch: 'feature/auth', taskId: 'task-42' },
+  );
+});
+
+test('keeps repository compatibility lookups broad but overlay lookups exact', () => {
+  const repository = { projectId: 'repo' };
+  const branch = { projectId: 'repo', branch: 'feature/auth' };
+  const branchTask = { ...branch, taskId: 'task-42' };
+
+  assert.equal(memoryMatchesScope(branchTask, repository), true);
+  assert.equal(memoryMatchesScope(branchTask, branch), false);
+  assert.equal(memoryMatchesScope(branch, branch), true);
+  assert.equal(memoryMatchesScope(branchTask, branchTask), true);
+  assert.equal(memoryMatchesScope({ projectId: 'other' }, repository), false);
 });
 
 test('normalizes compact provenance and temporal keys', () => {

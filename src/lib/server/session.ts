@@ -6,28 +6,37 @@ export type AgentSession = {
   id: string;
   userId: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   startedAt: string;
   recalledAt?: string;
   captureCount: number;
   lastActivityAt: string;
 };
 
+/* One secret, one purpose. This used to fall back to
+   BRAINFEATHER_DATA_INDEX_KEY, which meant rotating the blind-index key
+   silently invalidated every active session, and one leaked secret
+   covered both signing and indexing. production-config.ts now requires
+   this variable independently, so the fallback bought nothing. */
 function sessionSecret(): string {
-  return (
-    process.env.BRAINFEATHER_SESSION_SECRET ||
-    process.env.BRAINFEATHER_DATA_INDEX_KEY ||
-    ''
-  );
+  return process.env.BRAINFEATHER_SESSION_SECRET || '';
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function startSession(userId: string, projectId?: string, now = new Date()): AgentSession {
+export function startSession(
+  userId: string,
+  scope: { projectId?: string; branch?: string; taskId?: string } = {},
+  now = new Date(),
+): AgentSession {
   const startedAt = now.toISOString();
   return {
     id: randomUUID(),
     userId,
-    ...(projectId ? { projectId } : {}),
+    ...(scope.projectId ? { projectId: scope.projectId } : {}),
+    ...(scope.branch ? { branch: scope.branch } : {}),
+    ...(scope.taskId ? { taskId: scope.taskId } : {}),
     startedAt,
     captureCount: 0,
     lastActivityAt: startedAt,
@@ -92,6 +101,9 @@ export function decodeSession(
       session.userId !== userId ||
       typeof session.startedAt !== 'string' ||
       typeof session.captureCount !== 'number' ||
+      (session.projectId !== undefined && typeof session.projectId !== 'string') ||
+      (session.branch !== undefined && typeof session.branch !== 'string') ||
+      (session.taskId !== undefined && typeof session.taskId !== 'string') ||
       !Number.isFinite(Date.parse(session.startedAt)) ||
       Date.now() - Date.parse(session.startedAt) > SESSION_TTL_MS
     ) {

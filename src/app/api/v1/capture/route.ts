@@ -6,7 +6,7 @@ import {
   startSession,
   tryEncodeSession,
 } from '@/lib/server/session';
-import { readJson, SOURCES, oneOf, str } from '@/lib/server/validate';
+import { memoryScope, readJson, SOURCES, oneOf, str } from '@/lib/server/validate';
 
 async function captureActivity(request: Request) {
   const auth = await authenticate(request);
@@ -18,12 +18,9 @@ async function captureActivity(request: Request) {
   const activity = str(body.activity, 'activity', { min: 3, max: 8000 });
   if (!activity.ok) return fail(400, activity.error);
 
-  let projectId: string | undefined;
-  if (body.projectId !== undefined) {
-    const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });
-    if (!parsed.ok) return fail(400, parsed.error);
-    projectId = parsed.value;
-  }
+  const parsedScope = memoryScope(body);
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  let { projectId, branch, taskId } = parsedScope.value;
 
   let source: string | undefined;
   if (body.source !== undefined) {
@@ -42,15 +39,26 @@ async function captureActivity(request: Request) {
     if (!parsed.ok) return fail(400, parsed.error);
     session = decodeSession(parsed.value, auth.userId);
     if (!session) return fail(400, 'sessionToken is invalid.');
-    if (session.projectId && projectId && session.projectId !== projectId) {
+    if (projectId && session.projectId !== projectId) {
       return fail(400, 'sessionToken belongs to a different project.');
     }
+    if (branch && session.branch !== branch) {
+      return fail(400, 'sessionToken belongs to a different branch.');
+    }
+    if (taskId && session.taskId !== taskId) {
+      return fail(400, 'sessionToken belongs to a different task.');
+    }
   }
-  if (!session) session = startSession(auth.userId, projectId);
+  projectId ??= session?.projectId;
+  branch ??= session?.branch;
+  taskId ??= session?.taskId;
+  if (!session) session = startSession(auth.userId, { projectId, branch, taskId });
 
   const result = await captureFromActivity(auth.userId, {
     activity: activity.value,
     projectId,
+    branch,
+    taskId,
     source,
     session,
   });

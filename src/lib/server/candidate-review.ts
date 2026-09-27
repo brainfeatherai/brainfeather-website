@@ -24,6 +24,8 @@ export function candidateForApproval(candidate: MemoryCandidateDoc): Candidate {
     source: candidate.source,
     title: candidate.title,
     projectId: candidate.projectId,
+    ...(candidate.branch ? { branch: candidate.branch } : {}),
+    ...(candidate.taskId ? { taskId: candidate.taskId } : {}),
     provenance: candidate.provenance,
     confidence: candidate.confidence,
   };

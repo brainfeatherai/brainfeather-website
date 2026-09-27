@@ -1,10 +1,37 @@
 import type { Metadata } from "next";
+import { Outfit, Geist_Mono } from "next/font/google";
 import { SITE_URL as SITE } from "@/lib/site";
+import {
+  baseOpenGraph,
+  baseTwitter,
+  SITE_DESCRIPTION as DESCRIPTION,
+  SITE_TITLE as TITLE,
+} from "@/lib/share-metadata";
 import "./globals.css";
 
-const TITLE = "Brainfeather — Long-term memory for AI agents";
-const DESCRIPTION =
-  "The memory layer that sits under Claude Code, Cursor and your own agents: it records the facts that matter and hands them back on the next run.";
+/* The type the design actually specifies, self-hosted by next/font.
+
+   These were previously named only in a CSS font-family stack —
+   `--font-outfit: "Avenir Next", "Segoe UI", system-ui` — with no
+   @font-face and no font files in the repo, so Outfit never loaded at
+   all: Macs fell through to Avenir Next, Windows to Segoe UI. The
+   brand had a different voice per visitor.
+
+   `display: swap` renders fallback text immediately and swaps on load,
+   so a slow font never blocks first paint. next/font emits a
+   size-adjusted local fallback alongside each face, which keeps that
+   swap from shifting layout. */
+const outfit = Outfit({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-outfit",
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-geist-mono",
+});
 
 /* `metadataBase` is what makes every relative URL below resolve to an
    absolute one. Without it, Next falls back to the deployment URL —
@@ -35,22 +62,11 @@ export const metadata: Metadata = {
      /privacy, /terms and /contact each declare the homepage as their
      canonical — which tells search engines those pages are duplicates
      and to index the homepage instead. Each route sets its own. */
-  openGraph: {
-    type: "website",
-    siteName: "Brainfeather",
-    title: TITLE,
-    description: DESCRIPTION,
-    locale: "en_GB",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: TITLE,
-    description: DESCRIPTION,
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  openGraph: { ...baseOpenGraph, title: TITLE, description: DESCRIPTION },
+  twitter: { ...baseTwitter, title: TITLE, description: DESCRIPTION },
+  /* No root `robots`. index/follow is already the default when the tag
+     is absent, and emitting it here collided with the `noindex` Next
+     injects on 404 responses — the not-found page shipped both tags. */
   /* Google Search Console ownership proof. Emitted as
      <meta name="google-site-verification" content="..." />.
 
@@ -73,7 +89,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html
+      lang="en"
+      className={`${outfit.variable} ${geistMono.variable} h-full antialiased`}
+    >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

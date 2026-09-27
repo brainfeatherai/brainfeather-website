@@ -1,7 +1,7 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { handleHostedMcp, HOSTED_MCP_CORS } from '@/lib/server/hosted-mcp';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { str } from '@/lib/server/validate';
+import { memoryScope } from '@/lib/server/validate';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -31,10 +31,10 @@ async function mcp(request: Request) {
       'Hosted MCP needs x-brainfeather-project (or ?projectId=) because there is no local workspace root.',
     );
   }
-  const parsed = str(rawProject, 'projectId', { min: 1, max: 64 });
+  const parsed = memoryScope({ projectId: rawProject });
   if (!parsed.ok) return fail(400, parsed.error);
 
-  return handleHostedMcp(request, auth.userId, parsed.value);
+  return handleHostedMcp(request, auth.userId, parsed.value.projectId!);
 }
 
 function withMcpAccess(

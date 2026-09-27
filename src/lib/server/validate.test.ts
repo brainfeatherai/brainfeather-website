@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { boundedInt, dateTime } from './validate.ts';
+import { boundedInt, dateTime, memoryScope } from './validate.ts';
 
 test('requires timezone-qualified ISO date-times', () => {
   assert.equal(dateTime('2026-08-27T12:30:00Z', 'referenceAt').ok, true);
@@ -31,4 +31,24 @@ test('normalizes accepted date-times to UTC', () => {
     value: '2026-08-27T12:30:00.000Z',
     ms: Date.parse('2026-08-27T12:30:00.000Z'),
   });
+});
+
+test('validates hierarchical memory scope identifiers', () => {
+  assert.deepEqual(
+    memoryScope({ projectId: 'github.com/acme/api', branch: 'feature/auth', taskId: 'task-42' }),
+    {
+      ok: true,
+      value: {
+        projectId: 'github.com/acme/api',
+        branch: 'feature/auth',
+        taskId: 'task-42',
+      },
+    },
+  );
+  assert.deepEqual(memoryScope({ branch: 'main' }), {
+    ok: false,
+    error: 'branch and taskId require projectId.',
+  });
+  assert.equal(memoryScope({ projectId: 'repo\nother' }).ok, false);
+  assert.equal(memoryScope({ projectId: 'repo', branch: 'x'.repeat(129) }).ok, false);
 });

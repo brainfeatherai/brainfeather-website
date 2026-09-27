@@ -8,14 +8,12 @@ import SiteFooter from "@/components/SiteFooter";
 import WaitlistForm from "@/components/WaitlistForm";
 import Reveal from "@/components/Reveal";
 import StructuredData from "@/components/StructuredData";
+import { pageMetadata } from "@/lib/share-metadata";
 
 /* Own canonical + og:url, rather than inheriting from the root layout:
    a root-level canonical is inherited by EVERY child, which made the
    legal routes all point here and read as duplicates. */
-export const metadata: Metadata = {
-  alternates: { canonical: "/" },
-  openGraph: { url: "/" },
-};
+export const metadata: Metadata = pageMetadata({ path: "/" });
 
 /* ── dotted glyph, the recurring marker motif ── */
 function DotGlyph({ variant = "ring" }: { variant?: "ring" | "grid" | "fade" }) {
@@ -143,39 +141,6 @@ export default function Home() {
                 solid, and sliding it vertically fought the perspective. */}
             <Reveal variant="scale" delay={120} className="mt-10 overflow-hidden">
               <FlowDiagram />
-            </Reveal>
-
-            <Reveal delay={180} className="mt-12 grid gap-4 sm:grid-cols-3">
-              {[
-                {
-                  step: "Client",
-                  title: "Editor hooks, fail-open",
-                  body: "Recall injects before the prompt. Capture queues after the session. If Brainfeather is slow, the editor continues.",
-                },
-                {
-                  step: "MCP",
-                  title: "stdio or /mcp",
-                  body: "Pin @brainfeather/mcp@1.5.2. Context is compiled on the Singapore API so the model does not wait on a second extraction call.",
-                },
-                {
-                  step: "Dashboard",
-                  title: "Review, then recall",
-                  body: "Inferred facts wait at /review. Approved memories are what the next Cursor, Claude Code, or OpenCode session sees.",
-                },
-              ].map((item) => (
-                <article
-                  key={item.step}
-                  className="hairline rounded-2xl border border-forest/10 bg-paper-dim/70 px-5 py-6"
-                >
-                  <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald">
-                    {item.step}
-                  </p>
-                  <h3 className="mt-3 text-[16px] font-semibold tracking-[-0.02em] text-forest">
-                    {item.title}
-                  </h3>
-                  <p className="mt-2 text-[12.5px] leading-[1.7] text-forest/62">{item.body}</p>
-                </article>
-              ))}
             </Reveal>
           </div>
 

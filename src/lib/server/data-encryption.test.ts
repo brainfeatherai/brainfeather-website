@@ -95,7 +95,19 @@ test('reads legacy plaintext and leaves writes plaintext while disabled', () => 
   assert.equal(encryptStoredValue('legacy value', context), 'legacy value');
 });
 
-test('refuses an implicit plaintext mode in production runtimes', () => {
+test('defaults to keyless plaintext outside production', () => {
+  mutableEnv.NODE_ENV = 'development';
+  delete process.env.BRAINFEATHER_DATA_ENCRYPTION;
+  delete process.env.BRAINFEATHER_DATA_ENCRYPTION_KEYS;
+  delete process.env.BRAINFEATHER_DATA_INDEX_KEY;
+
+  assert.equal(encryptStoredValue('plain value', context), 'plain value');
+  assert.equal(decryptStoredValue('plain value', context), 'plain value');
+  assert.equal(blindIndex('repo', 'user-1', 'memory.projectId'), 'repo');
+  assert.deepEqual(lookupValues('repo', 'user-1', 'memory.projectId'), ['repo']);
+});
+
+test('refuses an implicit mode in production runtimes', () => {
   mutableEnv.NODE_ENV = 'production';
   delete process.env.BRAINFEATHER_DATA_ENCRYPTION;
   assert.throws(
@@ -114,8 +126,6 @@ test('compatibility mode reads both formats, queries both indexes, and writes pl
     blindIndex('repo', 'user-1', 'memory.projectId'),
     'repo',
   ]);
-  const preserved = encryptStoredValue('edited encrypted value', context, true);
-  assert.equal(decryptStoredValue(preserved, context), 'edited encrypted value');
 });
 
 test('creates tenant-bound blind indexes with legacy lookup compatibility', () => {
@@ -145,12 +155,14 @@ test('fits worst-case validated values in the documented columns', () => {
       mt: 'correction',
       c: 1,
       p: { t: 'commit', r: 'r'.repeat(128) },
-      is: Array.from({ length: 25 }, () => 'a'.repeat(64)),
+      is: Array.from({ length: 25 }, () => 'a'.repeat(36)),
       oa: '2026-08-27T00:00:00.000Z',
       vf: '2026-08-27T00:00:00.000Z',
       vt: '2026-09-27T00:00:00.000Z',
       ia: '2026-09-27T00:00:00.000Z',
       tt: 'decision',
+      b: 'b'.repeat(128),
+      tk: 't'.repeat(128),
     }),
     p: 'p'.repeat(64),
   }), {

@@ -50,6 +50,22 @@ function CandidateRow({
             {candidate.projectId}
           </span>
         ) : null}
+        {candidate.branch ? (
+          <span
+            title={candidate.branch}
+            className="max-w-[16ch] truncate rounded-md bg-paper-dim px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] text-forest/45"
+          >
+            Branch · {candidate.branch}
+          </span>
+        ) : null}
+        {candidate.taskId ? (
+          <span
+            title={candidate.taskId}
+            className="max-w-[16ch] truncate rounded-md bg-paper-dim px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] text-forest/45"
+          >
+            Task · {candidate.taskId}
+          </span>
+        ) : null}
         <span className="ml-auto font-mono text-[9px] uppercase tracking-[0.08em] text-forest/35">
           {when}
         </span>
@@ -221,7 +237,7 @@ function ReviewView() {
                 <Link href="/api-keys" className="underline decoration-emerald/40 underline-offset-2">
                   an API key
                 </Link>{" "}
-                and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.5.2 init</code>
+                and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.6.2 init</code>
                 . Inferred facts appear here instead of entering recall.
               </>
             ) : (

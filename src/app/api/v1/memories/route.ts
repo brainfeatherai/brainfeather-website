@@ -28,6 +28,7 @@ import {
   dateTime,
   SOURCES,
   limitOf,
+  memoryScope,
   oneOf,
   readJson,
   secretReason,
@@ -40,7 +41,13 @@ async function listMemories(request: Request) {
   if (!auth.ok) return fail(auth.status, auth.error);
 
   const params = new URL(request.url).searchParams;
-  const projectId = params.get('projectId') ?? undefined;
+  const parsedScope = memoryScope({
+    projectId: params.get('projectId'),
+    branch: params.get('branch'),
+    taskId: params.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
   const strictScope = strictScopeOf(params);
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   let referenceAtMs: number | undefined;
@@ -60,6 +67,8 @@ async function listMemories(request: Request) {
   const memories = await listActive(auth.userId, {
     category: rawCategory ?? undefined,
     projectId,
+    branch,
+    taskId,
     strictScope,
     limit: limitOf(params.get('limit')),
     referenceAtMs,
@@ -114,18 +123,9 @@ async function createMemory(request: Request) {
        at the database as a 500 — the same class of drift as the `source`
        enum, where this layer accepted more than the schema allowed.
        Real ids overflow: a nested self-hosted remote measured 69 chars. */
-    let projectId: string | undefined;
-    if (body.projectId !== undefined) {
-      const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });
-      if (!parsed.ok) return fail(400, parsed.error);
-      if (!/^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/.test(parsed.value)) {
-        return fail(
-          400,
-          'projectId must use printable ASCII without quotes or backslashes.',
-        );
-      }
-      projectId = parsed.value;
-    }
+    const parsedScope = memoryScope(body);
+    if (!parsedScope.ok) return fail(400, parsedScope.error);
+    const { projectId, branch, taskId } = parsedScope.value;
 
     let supersedesId: string | undefined;
     if (body.supersedesId !== undefined) {
@@ -243,6 +243,8 @@ async function createMemory(request: Request) {
       source,
       title,
       projectId,
+      branch,
+      taskId,
       supersedesId,
       observedAt,
       validFrom,

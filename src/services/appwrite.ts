@@ -101,14 +101,6 @@ export const authService = {
   async logout() {
     return await account.deleteSession('current');
   },
-
-  async sendPasswordRecovery(email: string) {
-    return await account.createRecovery(email, `${window.location.origin}/reset-password`);
-  },
-
-  async resetPassword(userId: string, secret: string, password: string) {
-    return await account.updateRecovery(userId, secret, password);
-  },
 };
 
 /* All application data access stays behind authenticated server routes.

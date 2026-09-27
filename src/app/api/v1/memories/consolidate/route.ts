@@ -1,7 +1,7 @@
 import { authenticate, fail } from '@/lib/server/api-auth';
 import { consolidateProjectMemories } from '@/lib/server/consolidate';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { readJson, str } from '@/lib/server/validate';
+import { memoryScope, readJson } from '@/lib/server/validate';
 
 async function consolidateMemories(request: Request) {
   const auth = await authenticate(request);
@@ -9,15 +9,17 @@ async function consolidateMemories(request: Request) {
 
   const body = await readJson(request);
   if (!body) return fail(400, 'Body must be a JSON object.');
-  let projectId: string | undefined;
-  if (body.projectId !== undefined) {
-    const parsed = str(body.projectId, 'projectId', { min: 1, max: 64 });
-    if (!parsed.ok) return fail(400, parsed.error);
-    projectId = parsed.value;
-  }
+  const parsedScope = memoryScope(body);
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
 
   const commit = body.commit === true;
-  const result = await consolidateProjectMemories(auth.userId, { projectId, commit });
+  const result = await consolidateProjectMemories(auth.userId, {
+    projectId,
+    branch,
+    taskId,
+    commit,
+  });
   return Response.json({
     clusterCount: result.clusters.length,
     merged: result.decisions.filter((decision) => decision.action === 'add').length,

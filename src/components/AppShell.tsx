@@ -76,7 +76,7 @@ function NavGroup({
 
   return (
     <div className="mt-6">
-      <p className="px-3 font-mono text-[9px] uppercase tracking-[0.16em] text-forest/25">
+      <p className="px-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-muted">
         {label}
       </p>
       <div className="mt-2 flex flex-col gap-1">
@@ -90,13 +90,13 @@ function NavGroup({
               className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald/50 ${
                 active
                   ? "bg-white/[0.10] text-forest shadow-[inset_0_0_0_1px_rgba(255,255,255,0.045)]"
-                  : "text-forest/52 hover:bg-white/[0.055] hover:text-forest/90"
+                  : "text-ink-body hover:bg-white/[0.055] hover:text-forest"
               }`}
             >
               <Icon
                 size={16}
                 strokeWidth={active ? 2 : 1.6}
-                className={active ? "text-emerald" : "text-forest/35 group-hover:text-forest/65"}
+                className={active ? "text-emerald" : "text-ink-faint group-hover:text-ink-body"}
                 aria-hidden
               />
               <span>{itemLabel}</span>
@@ -156,7 +156,7 @@ export default function AppShell({
           <Search
             size={14}
             strokeWidth={1.6}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-forest/25"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
             aria-hidden
           />
           <input
@@ -165,9 +165,9 @@ export default function AppShell({
             value={navQuery}
             onChange={(event) => setNavQuery(event.target.value)}
             placeholder="Search…"
-            className="h-10 w-full rounded-lg border border-white/[0.09] bg-black/10 pl-9 pr-12 text-[12px] text-forest outline-none placeholder:text-forest/30 focus:border-emerald/35 focus:bg-black/15"
+            className="h-10 w-full rounded-lg border border-white/[0.09] bg-black/10 pl-9 pr-12 text-[12px] text-forest outline-none placeholder:text-ink-muted focus:border-emerald/35 focus:bg-black/15"
           />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 font-mono text-[8px] text-forest/25">
+          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 font-mono text-[8px] text-ink-muted">
             ⌘K
           </kbd>
         </label>
@@ -185,10 +185,10 @@ export default function AppShell({
               {initial}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-medium text-forest/80">
+              <p className="truncate text-[12px] font-medium text-ink-strong">
                 {user?.name || "Personal workspace"}
               </p>
-              <p className="truncate text-[10px] text-forest/30">{user?.email ?? "Signed in"}</p>
+              <p className="truncate text-[10px] text-ink-muted">{user?.email ?? "Signed in"}</p>
             </div>
           </div>
         </div>

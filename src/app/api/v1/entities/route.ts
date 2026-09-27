@@ -14,7 +14,7 @@ import { authenticate, fail } from '@/lib/server/api-auth';
 import { listEntities, listProjectEntities, upsertEntity } from '@/lib/server/memory-store';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
-import { ENTITY_TYPES, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
+import { ENTITY_TYPES, memoryScope, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
 
 async function listEntitiesRoute(request: Request) {
   const auth = await authenticate(request);
@@ -22,7 +22,13 @@ async function listEntitiesRoute(request: Request) {
 
   const rawType = new URL(request.url).searchParams.get('type');
   const params = new URL(request.url).searchParams;
-  const projectId = params.get('projectId') ?? undefined;
+  const parsedScope = memoryScope({
+    projectId: params.get('projectId'),
+    branch: params.get('branch'),
+    taskId: params.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const { projectId, branch, taskId } = parsedScope.value;
   const strictScope = params.get('strictScope') === 'true';
   if (strictScope && !projectId) return fail(400, 'strictScope requires projectId.');
   if (rawType) {
@@ -31,8 +37,8 @@ async function listEntitiesRoute(request: Request) {
   }
 
   const entities =
-    strictScope && projectId
-      ? await listProjectEntities(auth.userId, projectId, rawType ?? undefined)
+    (strictScope || branch || taskId) && projectId
+      ? await listProjectEntities(auth.userId, { projectId, branch, taskId }, rawType ?? undefined)
       : await listEntities(auth.userId, rawType ?? undefined);
   return Response.json({ entities, count: entities.length });
 }

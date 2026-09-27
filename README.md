@@ -85,6 +85,16 @@ a Google app password, and setting `GMAIL_APP_PASSWORD` in Vercel for Production
 Development. Use the 16-character app password, not the Gmail account password. Redeploy after
 adding or rotating it. SMTP failures are reported to Sentry and never discard the Appwrite row.
 
+## Waitlist approval link signing
+
+Approval links are signed with HMAC using a dedicated `WAITLIST_APPROVAL_SECRET`
+(32+ characters), never the Appwrite master key. During migration, links previously
+signed with `APPWRITE_API_KEY` remain verifiable only when they expire by
+October 31, 2026; all new links use the dedicated secret and the legacy verifier
+self-retires after that date. Production boot fails closed without the dedicated
+secret (`src/lib/server/production-config.ts`); set it in Vercel as well, since
+`.env.local` is not deployed.
+
 ## API key storage rollout
 
 Editor keys are managed through JWT-authenticated server routes and can be stored as
@@ -109,11 +119,15 @@ zero-knowledge encryption: a production operator with both database access and t
 Vercel encryption keys can decrypt data.
 
 Production startup fails closed unless data encryption is `encrypted`, API key storage
-is `hashed`, and dedicated data-index and session-signing secrets are configured. Run
-`npm run schema:verify` before deployment; it reports every missing collection, table,
-field, enum value, capacity and query index without mutating Appwrite.
-`BRAINFEATHER_RATE_LIMIT_SECRET` must also be a dedicated 32+ character secret; public
-waitlist throttling stores only an HMAC bucket, never the raw network address.
+is `hashed`, and dedicated data-index and session-signing secrets are configured.
+Outside production an unset `BRAINFEATHER_DATA_ENCRYPTION` defaults to `plaintext`
+so a fresh checkout needs no encryption or index keys; production still refuses an
+implicit mode. Candidate capture/review follows the configured write mode, so local
+rows are plaintext until encryption is explicitly enabled. Run `npm run schema:verify` before deployment; it reports every
+missing collection, table, field, enum value, capacity and query index without
+mutating Appwrite. `BRAINFEATHER_RATE_LIMIT_SECRET` must also be a dedicated
+32+ character secret; public waitlist and registration throttling stores only an
+HMAC bucket, never the raw network address.
 
 Use three rollout states:
 
@@ -123,7 +137,8 @@ Use three rollout states:
 2. Generate two independent 32-byte secrets. Set
    `BRAINFEATHER_DATA_ENCRYPTION_KEYS=v1:<base64url-key>`,
    `BRAINFEATHER_DATA_INDEX_KEY=<base64url-key>`, and
-   `BRAINFEATHER_DATA_ENCRYPTION=compatibility`. Compatibility mode reads plaintext and
+   `BRAINFEATHER_DATA_ENCRYPTION=compatibility` **in production too** — an unset
+   value fails closed at boot there. Compatibility mode reads plaintext and
    ciphertext, queries plaintext and blind indexes, and keeps new rows plaintext.
 3. Verify dashboard and MCP reads, then switch to
    `BRAINFEATHER_DATA_ENCRYPTION=encrypted`. New writes are encrypted.
@@ -140,16 +155,30 @@ key requires a separate coordinated index migration and must not be done in plac
 
 ## Retrieval evaluation
 
-Encrypted memory search ranks tenant- and project-scoped candidates only after they are
-decrypted inside the server process. Ranking combines BM25 lexical relevance, curated
-related concepts, canonical entity overlap, and bounded recency. Queries and plaintext
-candidate text are not sent to an external search or embedding provider.
+Encrypted memory search ranks tenant- and repository-scoped candidates only after they
+are decrypted inside the server process. Optional `branch` and `taskId` overlays are
+stored in encrypted metadata: repository facts are inherited, branch facts stay on their
+branch, and task facts stay with their task. A task can optionally be constrained to a
+branch. Ranking combines BM25 lexical relevance, curated related concepts, canonical
+entity overlap, and bounded recency. Queries and plaintext candidate text are not sent
+to an external search or embedding provider.
 
 Run the deterministic regression suite with:
 
 ```bash
 npm run eval:retrieval
 ```
+
+RepoMemBench extends that retrieval smoke test into a coding-memory baseline covering
+scope isolation, stale truth, write filtering, supersession, evidence, context budgets,
+and latency:
+
+```bash
+npm run bench:repo-memory
+```
+
+See [`docs/repomembench.md`](docs/repomembench.md) for scenarios, metrics, known gaps,
+and the future Mem0/Zep comparison protocol.
 
 The report compares the previous concept-only ranker with the hybrid ranker using MRR,
 Hit@1, Hit@3, negative-query abstention, and in-process latency. This small fixture suite
@@ -163,6 +192,10 @@ fact, when it was valid, its temporal type, confidence, and evidence provenance.
 `referenceAt` query parameter on memory lists, search, and context returns facts valid at
 that point in time. Existing rows remain readable; legacy invalid rows without a reliable
 validity end fail closed in historical queries.
+
+Memory list, search, context, capture, session, consolidation, entity, and graph APIs
+accept optional `branch` and `taskId` scope values alongside `projectId`. Hosted MCP tools
+accept `branch` and `taskId` per call; the repository remains bound to the MCP connection.
 
 `GET /api/v1/context` also accepts an optional `query` and `maxTokens` (256–12,000).
 The context compiler pins the top relevant memory, preserves facts/decisions/patterns
@@ -184,7 +217,6 @@ prevents status and graph edges from changing before the fact is valid.
   jurisdiction before publication.
 - **The confirmation email has never been executed.** It needs one real signup
   against a deployed Apps Script to verify.
-- The favicon is still the `create-next-app` default.
 
 ## Licence
 

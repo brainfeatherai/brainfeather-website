@@ -3,7 +3,7 @@ import './test-env.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { categoryForType, extractActivityFacts } from './capture.ts';
-import { detectMemoryType } from './think.ts';
+import { detectMemoryType } from './memory-policy.ts';
 
 test('extracts durable facts from agent activity and drops chatter', () => {
   const facts = extractActivityFacts(

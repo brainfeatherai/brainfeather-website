@@ -16,12 +16,18 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { ID, Query } from 'node-appwrite';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin.ts';
-import { rankMemories } from './retrieval-ranking.ts';
+import { rankMemoriesWithExplanations, type MemoryExplanation } from './retrieval-ranking.ts';
 import {
   invalidateMemoryMetadata,
+  mergeMemoryMetadata,
+  memoryIsRetrievable,
+  memoryMatchesScope,
   memoryIsVisibleAt,
+  memoryScopeOf,
   normalizeMemoryMetadata,
   reviveMemoryMetadata,
+  sameMemoryScope,
+  type MemoryScope,
 } from './memory-temporal.ts';
 import {
   blindIndex,
@@ -32,6 +38,10 @@ import {
   lookupValues,
   needsDataEncryption,
 } from './data-encryption.ts';
+
+/* A search result carries its recall explanation beside the record, so
+   callers can show WHY a fact was surfaced without re-ranking it. */
+export type SearchHit = MemoryDoc & { explanation: MemoryExplanation };
 
 type CollectionId = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
@@ -73,6 +83,8 @@ export type MemoryDoc = {
   status: 'active' | 'invalid';
   supersededBy?: string;
   projectId?: string;
+  branch?: string;
+  taskId?: string;
   metadata?: string;
   temporal?: ReturnType<typeof normalizeMemoryMetadata>;
 };
@@ -136,6 +148,8 @@ export function encodeMemoryDocument(
     source?: string;
     title?: string;
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     metadata?: string;
   },
 ) {
@@ -155,9 +169,17 @@ function storedMemoryData(
     source?: string;
     title?: string;
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     metadata?: string;
   },
 ) {
+  const metadata = fact.branch || fact.taskId
+    ? mergeMemoryMetadata(fact.metadata, {
+        ...(fact.branch ? { branch: fact.branch } : {}),
+        ...(fact.taskId ? { taskId: fact.taskId } : {}),
+      })
+    : fact.metadata;
   if (!dataEncryptionEnabled()) {
     return {
       userId,
@@ -168,13 +190,13 @@ function storedMemoryData(
       tags: [],
       status: 'active' as const,
       ...(fact.projectId ? { projectId: fact.projectId } : {}),
-      ...(fact.metadata ? { metadata: fact.metadata } : {}),
+      ...(metadata ? { metadata } : {}),
     };
   }
 
   const privateMetadata: StoredMemoryMetadata = {
     v: 2,
-    ...(fact.metadata ? { m: fact.metadata } : {}),
+    ...(metadata ? { m: metadata } : {}),
     ...(fact.projectId ? { p: fact.projectId } : {}),
   };
 
@@ -195,7 +217,7 @@ function storedMemoryData(
     ...(fact.projectId
       ? { projectId: blindIndex(fact.projectId, userId, 'memory.projectId') }
       : {}),
-    ...(fact.metadata || fact.projectId
+    ...(metadata || fact.projectId
       ? {
           metadata: encryptStoredValue(
             JSON.stringify(privateMetadata),
@@ -222,7 +244,7 @@ function storedMemoryMetadata(
   return encryptStoredValue(
     value,
     memoryContext(userId, documentId, 'metadata'),
-    true,
+    { forceEncryption: true },
   );
 }
 
@@ -241,6 +263,7 @@ function decryptedMemory(row: MemoryDoc): MemoryDoc {
     metadata = 'version' in parsed ? parsed.metadata : parsed.m;
   }
   const temporal = normalizeMemoryMetadata(metadata, row.$createdAt);
+  const scope = memoryScopeOf({ projectId, metadata });
 
   return {
     ...row,
@@ -252,6 +275,8 @@ function decryptedMemory(row: MemoryDoc): MemoryDoc {
       memoryContext(row.userId, row.$id, 'content'),
     ),
     projectId,
+    branch: scope.branch,
+    taskId: scope.taskId,
     metadata,
     temporal,
   };
@@ -317,6 +342,8 @@ export async function migrateOwnedDataEncryption(userId: string): Promise<{
       source: plaintext.source,
       title: plaintext.title,
       projectId: plaintext.projectId,
+      branch: plaintext.branch,
+      taskId: plaintext.taskId,
       metadata: plaintext.metadata,
     });
     await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.memories, row.$id, {
@@ -393,6 +420,8 @@ export async function listActive(
     projectId?: string;
     limit?: number;
     strictScope?: boolean;
+    branch?: string;
+    taskId?: string;
     referenceAtMs?: number;
     all?: boolean;
   } = {},
@@ -452,7 +481,15 @@ export async function listActive(
     visible.push(
       ...(page.documents as unknown as MemoryDoc[])
         .map(decryptedMemory)
-        .filter((memory) => memoryIsVisibleAt(memory, referenceAtMs)),
+        .filter((memory) =>
+          memoryIsRetrievable(memory, {
+            projectId: opts.projectId,
+            branch: opts.branch,
+            taskId: opts.taskId,
+            strictScope: opts.strictScope,
+            referenceAtMs,
+          }),
+        ),
     );
     if (!opts.all && visible.length >= limit) return visible.slice(0, limit);
     if (page.documents.length < pageSize) return opts.all ? visible : visible.slice(0, limit);
@@ -495,6 +532,8 @@ export async function search(
     projectId?: string;
     limit?: number;
     strictScope?: boolean;
+    branch?: string;
+    taskId?: string;
     referenceAtMs?: number;
   } = {},
 ): Promise<MemoryDoc[]> {
@@ -509,16 +548,21 @@ export async function searchWithMeta(
     projectId?: string;
     limit?: number;
     strictScope?: boolean;
+    branch?: string;
+    taskId?: string;
     referenceAtMs?: number;
   } = {},
-): Promise<{ memories: MemoryDoc[]; truncated: boolean; scanned: number }> {
+): Promise<{ memories: SearchHit[]; truncated: boolean; scanned: number }> {
   const limit = opts.limit ?? 10;
   const pool = await listActive(userId, { ...opts, limit: 501 });
   const truncated = pool.length > 500;
   const candidates = truncated ? pool.slice(0, 500) : pool;
 
   return {
-    memories: rankMemories(candidates, query, { limit, asOfMs: opts.referenceAtMs }),
+    memories: rankMemoriesWithExplanations(candidates, query, {
+      limit,
+      asOfMs: opts.referenceAtMs,
+    }).map(({ memory, explanation }) => ({ ...memory, explanation })),
     truncated,
     scanned: candidates.length,
   };
@@ -532,6 +576,8 @@ export async function createMemory(
     source?: string;
     title?: string;
     projectId?: string;
+    branch?: string;
+    taskId?: string;
     metadata?: string;
     supersedeIds?: string[];
   },
@@ -567,7 +613,7 @@ export async function createMemory(
         const target = decryptedMemory(storedTarget);
         if (
           target.userId !== userId ||
-          (target.projectId ?? null) !== (fact.projectId ?? null) ||
+          !sameMemoryScope(target, fact) ||
           target.status !== 'active'
         ) {
           throw new Error('Supersession target is not active in this project.');
@@ -639,7 +685,7 @@ export async function createMemory(
 export async function getMemory(
   userId: string,
   id: string,
-  projectId?: string,
+  scope?: MemoryScope,
 ): Promise<MemoryDoc | null> {
   try {
     const memory = decryptedMemory((await adminDb.getDocument(
@@ -648,7 +694,7 @@ export async function getMemory(
       id,
     )) as unknown as MemoryDoc);
     if (memory.userId !== userId) return null;
-    if (projectId !== undefined && memory.projectId !== projectId) return null;
+    if (scope && !sameMemoryScope(memory, scope)) return null;
     return memory;
   } catch (error) {
     if (isNotFound(error)) return null;
@@ -703,7 +749,7 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
         const target = decryptedMemory(storedTarget);
         if (
           target.userId !== replacement.userId ||
-          (target.projectId ?? null) !== (replacement.projectId ?? null) ||
+          !sameMemoryScope(target, replacement) ||
           (target.status !== 'active' && target.supersededBy !== byId)
         ) {
           throw new Error('Supersession target is not active in this project.');
@@ -754,7 +800,7 @@ export async function supersede(ids: string[], byId: string): Promise<void> {
 export async function deleteMemory(
   userId: string,
   id: string,
-  projectId?: string,
+  scope?: MemoryScope,
 ): Promise<boolean> {
   try {
     const doc = decryptedMemory((await adminDb.getDocument(
@@ -763,7 +809,7 @@ export async function deleteMemory(
       id,
     )) as unknown as MemoryDoc);
     if (doc.userId !== userId) return false;
-    if (projectId && doc.projectId !== projectId) return false;
+    if (scope && !memoryMatchesScope(doc, scope)) return false;
   } catch (error) {
     if (isNotFound(error)) return false;
     throw error;
@@ -791,7 +837,7 @@ export async function updateMemory(
     supersededBy?: string;
     validTo?: string;
   },
-  projectId?: string,
+  scope?: MemoryScope,
 ): Promise<MemoryDoc | null> {
   let doc: MemoryDoc;
   let storedDoc: MemoryDoc;
@@ -803,7 +849,7 @@ export async function updateMemory(
     )) as unknown as MemoryDoc;
     doc = decryptedMemory(storedDoc);
     if (doc.userId !== userId) return null;
-    if (projectId !== undefined && doc.projectId !== projectId) return null;
+    if (scope && !memoryMatchesScope(doc, scope)) return null;
   } catch (error) {
     if (isNotFound(error)) return null;
     throw error;
@@ -834,7 +880,7 @@ export async function updateMemory(
               ? encryptStoredValue(
                   data.content,
                   memoryContext(userId, id, 'content'),
-                  true,
+                  { forceEncryption: true },
                 )
               : data.content,
         }
@@ -916,21 +962,27 @@ async function edgesForMemoryIds(
 
 async function projectGraphScope(
   userId: string,
-  projectId: string,
+  scope: MemoryScope & { projectId: string },
 ): Promise<{ memoryIds: Set<string>; entityIds: Set<string> }> {
   const storedMemories = await listAllDocuments<MemoryDoc>(COLLECTIONS.memories, [
     Query.equal('userId', userId),
     Query.equal('status', 'active'),
     Query.equal(
       'projectId',
-      lookupValues(projectId, userId, 'memory.projectId'),
+      lookupValues(scope.projectId, userId, 'memory.projectId'),
     ),
     Query.orderDesc('$createdAt'),
   ]);
   const now = Date.now();
   const memories = storedMemories
     .map(decryptedMemory)
-    .filter((memory) => memoryIsVisibleAt(memory, now));
+    .filter((memory) =>
+      memoryIsRetrievable(memory, {
+        ...scope,
+        strictScope: true,
+        referenceAtMs: now,
+      }),
+    );
   const memoryIds = new Set(memories.map((memory) => memory.$id));
   const linkedEdges = await edgesForMemoryIds(userId, [...memoryIds]);
   const entityIds = new Set<string>();
@@ -944,10 +996,10 @@ async function projectGraphScope(
 
 export async function listProjectEntities(
   userId: string,
-  projectId: string,
+  scope: MemoryScope & { projectId: string },
   type?: string,
 ): Promise<EntityDoc[]> {
-  const { entityIds } = await projectGraphScope(userId, projectId);
+  const { entityIds } = await projectGraphScope(userId, scope);
   const ids = [...entityIds];
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
@@ -1002,14 +1054,14 @@ export async function upsertEntity(
               metadata: encryptStoredValue(
                 JSON.stringify({ version: 1, name } satisfies StoredEntityMetadata),
                 entityContext(userId, found.$id, 'metadata'),
-                true,
+                { forceEncryption: true },
               ),
               ...(summary || current.summary
                 ? {
                     summary: encryptStoredValue(
                       summary ?? current.summary!,
                       entityContext(userId, found.$id, 'summary'),
-                      true,
+                      { forceEncryption: true },
                     ),
                   }
                 : {}),
@@ -1305,13 +1357,13 @@ export async function traverseGraph(
   userId: string,
   entityId: string,
   depth = 1,
-  projectId?: string,
+  scope?: MemoryScope & { projectId: string },
 ): Promise<{ entities: EntityDoc[]; edges: EdgeDoc[] }> {
   let allowed: Set<string> | undefined;
-  if (projectId) {
-    const scope = await projectGraphScope(userId, projectId);
-    if (!scope.entityIds.has(entityId)) return { entities: [], edges: [] };
-    allowed = new Set([...scope.memoryIds, ...scope.entityIds]);
+  if (scope) {
+    const graphScope = await projectGraphScope(userId, scope);
+    if (!graphScope.entityIds.has(entityId)) return { entities: [], edges: [] };
+    allowed = new Set([...graphScope.memoryIds, ...graphScope.entityIds]);
   }
 
   const seen = new Set<string>([entityId]);

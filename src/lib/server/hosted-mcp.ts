@@ -33,6 +33,19 @@ const CATEGORIES = [
   'team',
 ] as const;
 
+const SCOPE_IDENTIFIER = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/, {
+    message: 'Scope identifiers must use printable ASCII without quotes or backslashes.',
+  });
+const SCOPE_INPUT = {
+  branch: SCOPE_IDENTIFIER.optional(),
+  taskId: SCOPE_IDENTIFIER.optional(),
+};
+
 function success(body: string, structuredContent: Record<string, unknown>) {
   return {
     content: [{ type: 'text' as const, text: body }],
@@ -81,7 +94,7 @@ async function attempt(work: () => Promise<{ body: string; data: Record<string, 
 }
 
 export function createHostedMcpServer(userId: string, projectId: string): McpServer {
-  const server = new McpServer({ name: 'brainfeather', version: '1.5.2' });
+  const server = new McpServer({ name: 'brainfeather', version: '1.6.0' });
 
   server.registerTool(
     'get_context',
@@ -91,13 +104,16 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
       inputSchema: {
         query: z.string().trim().min(1).max(200).optional(),
         maxTokens: z.number().int().min(256).max(12_000).optional(),
+        ...SCOPE_INPUT,
       },
     },
-    ({ query, maxTokens }) =>
+    ({ query, maxTokens, branch, taskId }) =>
       attempt(async () => {
         const tokenBudget = maxTokens ?? 4_000;
         const all = await listActive(userId, {
           projectId,
+          branch,
+          taskId,
           strictScope: true,
           limit: recallFetchLimit(tokenBudget),
         });
@@ -105,7 +121,7 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
           query,
           maxTokens: tokenBudget,
         });
-        return { body: recalledText(ctx), data: { projectId, ...ctx } };
+        return { body: recalledText(ctx), data: { projectId, branch, taskId, ...ctx } };
       }),
   );
 
@@ -116,12 +132,15 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
       inputSchema: {
         query: z.string().trim().min(1).max(200),
         limit: z.number().int().min(1).max(25).optional(),
+        ...SCOPE_INPUT,
       },
     },
-    ({ query, limit }) =>
+    ({ query, limit, branch, taskId }) =>
       attempt(async () => {
         const memories = await search(userId, query, {
           projectId,
+          branch,
+          taskId,
           strictScope: true,
           limit: limit ?? 10,
         });
@@ -132,6 +151,8 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
           body,
           data: {
             projectId,
+            branch,
+            taskId,
             memories: memories.map((memory) => ({
               id: memory.$id,
               content: memory.content,
@@ -155,15 +176,18 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
           .max(2000)
           .refine((value) => !secretReason(value), { message: 'Memory appears to contain sensitive data.' }),
         category: z.enum(CATEGORIES),
+        ...SCOPE_INPUT,
       },
     },
-    ({ content, category }) =>
+    ({ content, category, branch, taskId }) =>
       attempt(async () => {
         const decision = await think(userId, {
           content,
           category,
           source: clientSource(server.server.getClientVersion()?.name),
           projectId,
+          branch,
+          taskId,
           provenance: { type: 'user' },
         });
         const body =
@@ -190,13 +214,16 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
           .refine((value) => !secretReason(value), {
             message: 'Activity appears to contain sensitive data.',
           }),
+        ...SCOPE_INPUT,
       },
     },
-    ({ activity }) =>
+    ({ activity, branch, taskId }) =>
       attempt(async () => {
         const result = await captureFromActivity(userId, {
           activity,
           projectId,
+          branch,
+          taskId,
           source: clientSource(server.server.getClientVersion()?.name),
         });
         const body =
@@ -214,11 +241,11 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
     'forget_memory',
     {
       description: 'Permanently delete a memory only when the user says it was recorded in error.',
-      inputSchema: { id: z.string().trim().min(1).max(64) },
+      inputSchema: { id: z.string().trim().min(1).max(64), ...SCOPE_INPUT },
     },
-    ({ id }) =>
+    ({ id, branch, taskId }) =>
       attempt(async () => {
-        const removed = await deleteMemory(userId, id, projectId);
+        const removed = await deleteMemory(userId, id, { projectId, branch, taskId });
         if (!removed) throw new Error('No such memory.');
         return { body: `Deleted ${id}.`, data: { deleted: id } };
       }),
@@ -230,15 +257,16 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
       description: 'List tools, languages and concepts connected to memories in this project.',
       inputSchema: {
         type: z.enum(['tool', 'language', 'concept', 'person', 'project', 'pattern']).optional(),
+        ...SCOPE_INPUT,
       },
     },
-    ({ type }) =>
+    ({ type, branch, taskId }) =>
       attempt(async () => {
-        const entities = await listProjectEntities(userId, projectId, type);
+        const entities = await listProjectEntities(userId, { projectId, branch, taskId }, type);
         const body = entities.length
           ? entities.map((entity) => `${entity.$id} ${entity.type} | ${entity.name}`).join('\n')
           : 'No entities tracked yet.';
-        return { body, data: { projectId, entities } };
+        return { body, data: { projectId, branch, taskId, entities } };
       }),
   );
 
@@ -249,12 +277,17 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
       inputSchema: {
         entityId: z.string().trim().min(1).max(64),
         depth: z.number().int().min(1).max(3).optional(),
+        ...SCOPE_INPUT,
       },
     },
-    ({ entityId, depth }) =>
+    ({ entityId, depth, branch, taskId }) =>
       attempt(async () => {
-        const graph = await traverseGraph(userId, entityId, depth ?? 1, projectId);
-        return { body: JSON.stringify(graph), data: { projectId, ...graph } };
+        const graph = await traverseGraph(userId, entityId, depth ?? 1, {
+          projectId,
+          branch,
+          taskId,
+        });
+        return { body: JSON.stringify(graph), data: { projectId, branch, taskId, ...graph } };
       }),
   );
 
@@ -295,7 +328,9 @@ export function createHostedMcpServer(userId: string, projectId: string): McpSer
     async (uri) => {
       try {
         const queued = await listMemoryCandidates(userId, { status: 'pending', limit: 25 });
-        const scoped = queued.filter((row) => !row.projectId || row.projectId === projectId);
+        const scoped = queued.filter(
+          (row) => (!row.projectId || row.projectId === projectId) && !row.branch && !row.taskId,
+        );
         const text = scoped.length
           ? `Pending review (${scoped.length}). Approve at https://brainfeather.com/review\n${scoped
               .map((row) => `${row.$id} ${row.category} | ${row.content}`)

@@ -13,9 +13,14 @@
    directly, so signup keeps its side effect of creating the `users`
    profile document.
 
-   RequireAuth is a UX affordance, not the security boundary. Appwrite
-   rejects unauthorised reads regardless of what this renders, so a
-   brief pre-redirect flash cannot leak another user's data.
+   RequireAuth is a UX affordance, not the security boundary. The
+   boundary is server-side: `authenticate()` in lib/server/api-auth.ts
+   plus per-query `userId` scoping in lib/server/memory-store.ts. Reads
+   go through the Appwrite ADMIN key, which bypasses collection
+   permissions entirely — so Appwrite is NOT what stops one account from
+   reading another's data, and no server-side check may be relaxed on the
+   assumption that it is. A brief pre-redirect flash leaks nothing
+   because the data was never fetched without an authorised request.
    ──────────────────────────────────────────────────────────────── */
 
 import { useRouter } from "next/navigation";

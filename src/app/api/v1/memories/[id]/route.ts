@@ -15,7 +15,7 @@ import { metadataWithoutEvidenceDigest } from '@/lib/server/memory-temporal';
 import { reportServerError } from '@/lib/server/report-error';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { enrichMemory } from '@/lib/server/think';
-import { CATEGORIES, dateTime, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
+import { CATEGORIES, dateTime, memoryScope, oneOf, readJson, secretReason, str } from '@/lib/server/validate';
 
 async function updateMemoryRoute(
   request: Request,
@@ -50,7 +50,14 @@ async function updateMemoryRoute(
     data.category = parsed.value;
   }
 
-  const projectId = new URL(request.url).searchParams.get('projectId') ?? undefined;
+  const searchParams = new URL(request.url).searchParams;
+  const parsedScope = memoryScope({
+    projectId: searchParams.get('projectId'),
+    branch: searchParams.get('branch'),
+    taskId: searchParams.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const scope = Object.keys(parsedScope.value).length ? parsedScope.value : undefined;
 
   /* Retract and revive both go through here. A retraction without a
      replacement records 'dashboard' as the retractor, so the audit
@@ -80,7 +87,7 @@ async function updateMemoryRoute(
   try {
     /* Same 404-for-both rule as DELETE: "not found" and "not yours" are
        indistinguishable on purpose. */
-    const updated = await updateMemory(auth.userId, id, data, projectId);
+    const updated = await updateMemory(auth.userId, id, data, scope);
     if (!updated) return fail(404, 'No such memory.');
 
     if (updated.status === 'active' && (data.content !== undefined || data.status === 'active')) {
@@ -134,8 +141,15 @@ async function deleteMemoryRoute(
      found" and "belongs to someone else". Reporting 404 for both is
      deliberate: distinguishing them would confirm the existence of
      another user's records. */
-  const projectId = new URL(request.url).searchParams.get('projectId') ?? undefined;
-  const removed = await deleteMemory(auth.userId, id, projectId);
+  const searchParams = new URL(request.url).searchParams;
+  const parsedScope = memoryScope({
+    projectId: searchParams.get('projectId'),
+    branch: searchParams.get('branch'),
+    taskId: searchParams.get('taskId'),
+  });
+  if (!parsedScope.ok) return fail(400, parsedScope.error);
+  const scope = Object.keys(parsedScope.value).length ? parsedScope.value : undefined;
+  const removed = await deleteMemory(auth.userId, id, scope);
   if (!removed) return fail(404, 'No such memory.');
 
   return Response.json({ deleted: id });

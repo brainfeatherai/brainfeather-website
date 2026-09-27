@@ -1,0 +1,11 @@
+{
+  "benchmark": "0.2.0",
+  "baseline": "brainfeather-1.5.2",
+  "extends": "brainfeather-1.5.2.json",
+  "protected": {
+    "branchIsolation.rankingAccuracy": 1,
+    "branchIsolation.leakageRate": 0,
+    "taskIsolation.rankingAccuracy": 1,
+    "taskIsolation.leakageRate": 0
+  }
+}

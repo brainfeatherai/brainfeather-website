@@ -107,6 +107,9 @@ export function dataEncryptionMode(): DataEncryptionMode {
       '[brainfeather] BRAINFEATHER_DATA_ENCRYPTION must be explicit in production runtimes.',
     );
   }
+  /* Keyless local development stays genuinely keyless. Compatibility is
+     an explicit migration mode: it can read envelopes and query blind
+     indexes, so selecting it also means supplying the migration keys. */
   const mode = configured || 'plaintext';
   if (mode !== 'plaintext' && mode !== 'compatibility' && mode !== 'encrypted') {
     throw new Error(
@@ -136,9 +139,9 @@ export function needsDataEncryption(value: string): boolean {
 export function encryptStoredValue(
   value: string,
   context: EncryptionContext,
-  force = false,
+  options: { forceEncryption?: boolean } = {},
 ): string {
-  if (!value || (!force && !dataEncryptionEnabled())) return value;
+  if (!value || (!options.forceEncryption && !dataEncryptionEnabled())) return value;
 
   const active = encryptionKeys()[0];
   const iv = randomBytes(IV_BYTES);

@@ -3,7 +3,8 @@ import Link from "next/link";
 import SiteFooter from "@/components/SiteFooter";
 
 /* ────────────────────────────────────────────────────────────────
-   Shared chrome for /privacy, /terms and /contact.
+   Shared chrome for /privacy, /terms, /contact and the /ai-agent-memory
+   guide — the cream-from-the-top pages.
 
    A route group — `(legal)` in parens is organisational only and does
    NOT appear in the URL, so these render at /privacy, not /legal/privacy.

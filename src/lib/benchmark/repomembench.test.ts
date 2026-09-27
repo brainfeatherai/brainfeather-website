@@ -37,7 +37,7 @@ test('enforces generalization floors without pinning them', () => {
   improved.generalization.holdout.hitAtThree = 1;
   assert.equal(baselinePasses(improved), true);
   const regressed = structuredClone(report);
-  regressed.generalization.holdout.hitAtThree = 0.8;
+  regressed.generalization.holdout.hitAtThree = 0.7;
   assert.equal(baselinePasses(regressed), false);
   const abstentionRegressed = structuredClone(report);
   abstentionRegressed.generalization.dev.abstentionAccuracy = 0.5;

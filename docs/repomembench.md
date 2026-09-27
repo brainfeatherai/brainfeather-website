@@ -114,6 +114,28 @@ The fixes were diagnosed on dev, not fitted to it:
 - A query term the corpus cannot match is corrected when exactly one corpus
   word is one edit away. Ambiguous typos are left alone.
 
+### Round 1: sibling-only terms
+
+`grpc streaming interceptors` was answered from an API memory: `grpc`
+reaches the corpus only through its concept sibling `api`, and that sibling
+match counted as full evidence the topic was known. Such a term now earns
+half its IDF mass. It still counts as a touched term, so one sibling can
+carry one unknown word (`how does auth work` -> RLS) but not two.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Dev unknown-topic abstention | 60% | 100% |
+| Holdout unknown-topic abstention | 33% | 67% |
+| Holdout Hit@3 | 84.2% | 78.9% |
+
+Three holdout cases were added before the fix was run. The Hit@3 cost is
+one case, `how are schema changes applied`, which has the same shape as the
+negatives: one sibling-only term and two unknown ones. Separating generic
+words from topical ones would need a curated vocabulary, so the floor was
+lowered to the measured value instead. For a coding agent, a wrong memory
+in context is costlier than none. `mongodb aggregation pipeline` still
+answers: two of its terms have siblings in the corpus.
+
 `benchmarks/baselines/generalization.json` records these as floors, not
 pins: a split may improve but must not fall below them. Near-topic
 abstention ("how many redis cluster shards" when only the Redis TTL is

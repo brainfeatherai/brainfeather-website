@@ -82,6 +82,15 @@ const RECENT_THRESHOLD = 0.5;
    a general threshold. */
 const MIN_KNOWN_QUERY_MASS = 0.18;
 
+/* A term the corpus reaches only through a concept sibling is evidence
+   the topic is nearby, not that it is covered. It earns half its IDF in
+   the mass check while still counting as a touched term in the share
+   check. Effect: one sibling can carry a query with one unknown word
+   ("how does auth work" -> RLS, mass 0.25), not one with two ("grpc
+   streaming interceptors", mass 1/6). Applying the half to the share
+   check as well would drop that two-word concept recall. */
+const SIBLING_MASS_CREDIT = 0.5;
+
 const PROVENANCE_TYPES = new Set([
   'user',
   'agent',
@@ -166,8 +175,11 @@ function knownQueryEvidence(
     );
     const idf = Math.log(1 + (tokenized.length - df + 0.5) / (df + 0.5));
     total += idf;
-    if (df > 0 || expand(term).related.some(matchesAnywhere)) {
+    if (df > 0) {
       known += idf;
+      termCount++;
+    } else if (expand(term).related.some(matchesAnywhere)) {
+      known += idf * SIBLING_MASS_CREDIT;
       termCount++;
     }
   }

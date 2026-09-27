@@ -103,6 +103,10 @@ const devCases: Case[] = [
   { id: 'dev-neg-oncall', kind: 'negative', query: 'who is on call this week', expected: null },
   { id: 'dev-neg-k8s', kind: 'negative', query: 'kubernetes helm chart values', expected: null },
   { id: 'dev-neg-android', kind: 'negative', query: 'android minimum sdk version', expected: null },
+  /* Round 1: only a concept sibling is known ("grpc" ~ api) while the
+     rest of the query is wholly unknown. */
+  { id: 'dev-neg-grpc', kind: 'negative', query: 'grpc streaming interceptors', expected: null },
+  { id: 'dev-neg-webpack', kind: 'negative', query: 'webpack chunk splitting', expected: null },
 ];
 
 /* Frozen. Do not edit these to make a ranking change pass — add new
@@ -151,6 +155,12 @@ const holdoutCases: Case[] = [
   { id: 'ho-neg-ios', kind: 'negative', query: 'ios push notification certificate', expected: null },
   { id: 'ho-neg-appstore', kind: 'negative', query: 'app store release checklist', expected: null },
   { id: 'ho-neg-prototype', kind: 'negative', query: 'who wrote the original prototype', expected: null },
+  /* Added in round 1, before the round-1 fix was run: a concept term
+     reachable only through a sibling, next to unknown terms. Written
+     from the failure class, not tuned — mongo is expected to stay open. */
+  { id: 'ho-neg-jest', kind: 'negative', query: 'jest snapshot serializers', expected: null },
+  { id: 'ho-neg-mongo', kind: 'negative', query: 'mongodb aggregation pipeline', expected: null },
+  { id: 'ho-para-jest', kind: 'paraphrase', query: 'how do we run jest', expected: 'ci' },
 ];
 
 function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetrics {

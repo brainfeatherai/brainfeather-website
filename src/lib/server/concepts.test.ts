@@ -49,6 +49,17 @@ test('corrects a single-edit typo to the one corpus word it misspells', () => {
   assert.equal(rankMemories(rows, 'vitest', { limit: 3, asOfMs: NOW })[0]?.$id, 'tests');
 });
 
+test('a lone concept sibling cannot carry two unknown terms', () => {
+  const rows = [
+    memory('api', 'The public API server is versioned under /v1.'),
+    memory('rls', 'Row-level security policies guard every table.'),
+  ];
+  /* "grpc" reaches the corpus only through its sibling "api". */
+  assert.deepEqual(rankMemories(rows, 'grpc streaming interceptors', { limit: 3, asOfMs: NOW }), []);
+  /* One sibling next to one unknown word still recalls by concept. */
+  assert.ok(rankMemories(rows, 'grpc endpoints', { limit: 3, asOfMs: NOW }).length > 0);
+});
+
 test('leaves an ambiguous typo uncorrected rather than guessing', () => {
   /* `tokem` is one edit from both `token` and `totem`. */
   const rows = [

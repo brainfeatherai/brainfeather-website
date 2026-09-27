@@ -2,6 +2,12 @@ import { performance } from 'node:perf_hooks';
 import baselineArtifact from '../../../benchmarks/baselines/brainfeather-1.5.2.json' with { type: 'json' };
 import capabilityArtifact from '../../../benchmarks/baselines/branch-task-memory.json' with { type: 'json' };
 import abstentionArtifact from '../../../benchmarks/baselines/negative-query-abstention.json' with { type: 'json' };
+import generalizationArtifact from '../../../benchmarks/baselines/generalization.json' with { type: 'json' };
+import {
+  generalizationCaseCount,
+  runGeneralizationTrack,
+  type SplitMetrics,
+} from './generalization.ts';
 import { compileContext, estimateTokens } from '../server/context-compiler.ts';
 import {
   memoryEvidence,
@@ -16,7 +22,7 @@ import {
   type StoredFact,
 } from '../server/memory-policy.ts';
 
-export const REPOMEMBENCH_VERSION = '0.3.0';
+export const REPOMEMBENCH_VERSION = '0.4.0';
 export const BASELINE_RELEASE = 'brainfeather-1.5.2';
 const NOW = Date.parse('2026-08-30T00:00:00.000Z');
 const DAY = 86_400_000;
@@ -103,6 +109,11 @@ export type RepoMemBenchReport = {
       target: '100%';
       note: string;
     };
+  };
+  /* Unseen-query track: see generalization.ts. */
+  generalization: {
+    dev: SplitMetrics;
+    holdout: SplitMetrics;
   };
   capabilities: {
     branchIsolation: {
@@ -492,7 +503,8 @@ export function runRepoMemBench(options: { iterations?: number } = {}): RepoMemB
         1 +
         2 +
         4 +
-        2,
+        2 +
+        generalizationCaseCount(),
     },
     retrieval,
     writes,
@@ -500,6 +512,7 @@ export function runRepoMemBench(options: { iterations?: number } = {}): RepoMemB
     context: contextMetrics(),
     evidence: evidenceMetrics(),
     latencyMs: latencyMetrics(options.iterations ?? 300),
+    generalization: runGeneralizationTrack(),
     capabilityGaps: {
       negativeQueryAbstention: {
         measuredAccuracy: retrieval.abstentionAccuracy,
@@ -552,12 +565,23 @@ export function baselinePasses(report: RepoMemBenchReport): boolean {
       actual === baselineArtifact.protected[metric as keyof typeof protectedMetrics],
   );
 
+  /* Floors, not exact pins: these splits are expected to improve, and
+     pinning an imperfect score would make every improvement "fail". */
+  const floors = generalizationArtifact.floors;
+  const generalizationPass =
+    report.generalization.dev.hitAtThree >= floors['dev.hitAtThree'] &&
+    report.generalization.dev.abstentionAccuracy >= floors['dev.abstentionAccuracy'] &&
+    report.generalization.holdout.hitAtThree >= floors['holdout.hitAtThree'] &&
+    report.generalization.holdout.abstentionAccuracy >= floors['holdout.abstentionAccuracy'];
+
   return (
-    report.benchmark === abstentionArtifact.benchmark &&
-    report.baseline === abstentionArtifact.baseline &&
+    report.benchmark === generalizationArtifact.benchmark &&
+    report.baseline === generalizationArtifact.baseline &&
     capabilityArtifact.extends === 'brainfeather-1.5.2.json' &&
     abstentionArtifact.extends === 'branch-task-memory.json' &&
+    generalizationArtifact.extends === 'negative-query-abstention.json' &&
     protectedPass &&
+    generalizationPass &&
     report.latencyMs.p95 < baselineArtifact.protected['latencyMs.p95UpperBound'] &&
     /* Was `>= targets[...].baseline`, i.e. >= 0.667, so this metric could
        fall back to the old ranker behaviour and still exit 0. Now pinned to

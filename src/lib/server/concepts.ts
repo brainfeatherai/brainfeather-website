@@ -118,10 +118,22 @@ function normalize(word: string): string {
     if (w.length > suffix.length + 2 && w.endsWith(suffix)) {
       const stem = w.slice(0, -suffix.length);
       if (SIBLINGS.has(stem)) return stem;
+      /* Clusters often list only the -ing form, so "hosted" (-> host)
+         never reached `hosting`, nor "logged" `logging`. */
+      if (SIBLINGS.has(`${stem}ing`)) return `${stem}ing`;
     }
   }
   return w;
 }
+
+/* Two-word spellings of single concept terms. Without this, "log in"
+   tokenizes to `log` plus a dropped stopword and never reaches `login`,
+   which the auth cluster already knows. */
+const PHRASES: readonly [RegExp, string][] = [
+  [/\blog\s+in\b/g, 'login'],
+  [/\bsign\s+in\b/g, 'signin'],
+  [/\bsign\s+up\b/g, 'signup'],
+];
 
 /* Words that match everything and therefore rank nothing. Dropped from
    the query before expansion — without this, "how do we handle auth"
@@ -165,7 +177,9 @@ const MAX_QUERY_TERMS = 32;
 /** Search tokens shared by lexical ranking and concept expansion. */
 export function searchTokens(text: string, limit = 2048): string[] {
   const tokens: string[] = [];
-  for (const word of text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
+  let lowered = text.toLowerCase();
+  for (const [pattern, joined] of PHRASES) lowered = lowered.replace(pattern, joined);
+  for (const word of lowered.split(/[^a-z0-9]+/).filter(Boolean)) {
     const term = normalize(word);
     if (STOP.has(term) || (term.length < 3 && !SIBLINGS.has(term))) continue;
     tokens.push(term);
@@ -191,6 +205,24 @@ export function expand(query: string): ExpandedQuery {
   return { exact: [...exact], related: [...related] };
 }
 
+/* Below this length a prefix match stops being morphology and becomes
+   coincidence: `app` matched `appwrite` and `appsmith`, so "where is the
+   app hosted" scored the Appwrite auth memory as a direct hit. Shorter
+   terms match a whole word or its plural instead. */
+export const MIN_PREFIX_LENGTH = 4;
+
+/** Does a normalized query term match a normalized document token? */
+export function termMatchesToken(token: string, term: string): boolean {
+  if (token === term) return true;
+  return term.length < MIN_PREFIX_LENGTH ? token === `${term}s` : token.startsWith(term);
+}
+
+function endsWord(haystack: string, end: number): boolean {
+  const next = end < haystack.length ? haystack[end] : '';
+  if (next === 's') return end + 1 >= haystack.length || !/[a-z0-9]/.test(haystack[end + 1]);
+  return !next || !/[a-z0-9]/.test(next);
+}
+
 /* Does `term` occur in `haystack` at the START of a word?
 
    PREFIX-anchored, not plain substring and not whole-word. Plain
@@ -204,13 +236,22 @@ export function expand(query: string): ExpandedQuery {
    the end open gets both: `deploy` matches `deployment`, `auth` does not
    match `oauth`.
 
+   Terms shorter than MIN_PREFIX_LENGTH are also anchored at the end, so
+   `ci` no longer matches "city" and `go` no longer matches "google".
+
    Hand-rolled rather than a RegExp because this runs for every term
    against every candidate document; this allocates nothing. */
 function mentions(haystack: string, term: string): boolean {
   for (let from = 0; ; ) {
     const at = haystack.indexOf(term, from);
     if (at === -1) return false;
-    if (at === 0 || !/[a-z0-9]/.test(haystack[at - 1])) return true;
+    const startsWord = at === 0 || !/[a-z0-9]/.test(haystack[at - 1]);
+    if (
+      startsWord &&
+      (term.length >= MIN_PREFIX_LENGTH || endsWord(haystack, at + term.length))
+    ) {
+      return true;
+    }
     from = at + 1;
   }
 }

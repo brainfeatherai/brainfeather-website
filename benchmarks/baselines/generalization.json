@@ -1,0 +1,40 @@
+{
+  "benchmark": "0.4.0",
+  "baseline": "brainfeather-1.5.2",
+  "extends": "negative-query-abstention.json",
+  "note": "Floors, not targets: a split may improve freely but must not fall below these. Measured after the 0.4.0 ranking fixes (short-term exact matching, -ing stems, two-word phrases, one-edit typo correction) and round 1 (half mass credit for sibling-only terms). The holdout split was written before each fix and was not tuned against.",
+  "floors": {
+    "dev.hitAtThree": 0.769,
+    "dev.abstentionAccuracy": 1,
+    "holdout.hitAtThree": 0.789,
+    "holdout.abstentionAccuracy": 0.666
+  },
+  "targets": {
+    "holdout.abstentionAccuracy": { "current": 0.667, "target": 1 },
+    "dev.nearTopicAbstention": { "current": 0, "target": 1 },
+    "holdout.nearTopicAbstention": { "current": 0, "target": 1 }
+  },
+  "history": [
+    {
+      "version": "0.4.0",
+      "before": { "dev.hitAtThree": 0.538, "holdout.hitAtThree": 0.556 },
+      "after": { "dev.hitAtThree": 0.769, "holdout.hitAtThree": 0.833 }
+    },
+    {
+      "version": "0.4.0 round 1",
+      "change": "A query term the corpus reaches only through a concept sibling earns half its IDF mass.",
+      "holdoutCasesAdded": ["ho-neg-jest", "ho-neg-mongo", "ho-para-jest"],
+      "before": {
+        "dev.abstentionAccuracy": 0.6,
+        "holdout.hitAtThree": 0.842,
+        "holdout.abstentionAccuracy": 0.333
+      },
+      "after": {
+        "dev.abstentionAccuracy": 1,
+        "holdout.hitAtThree": 0.789,
+        "holdout.abstentionAccuracy": 0.667
+      },
+      "tradeoff": "ho-para-schema ('how are schema changes applied') now abstains. It has the same shape as the negatives the fix targets: one sibling-only term and two unknown ones. Telling generic words ('changes', 'applied') from topical ones ('streaming', 'interceptors') would need a curated word list, so the floor was lowered to the measured value rather than fitting vocabulary. Wrong context is costlier than no context for a coding agent."
+    }
+  ]
+}

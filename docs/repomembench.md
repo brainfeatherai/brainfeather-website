@@ -87,6 +87,86 @@ theory — the weakest true positive covers 0.234 of query mass and the false
 positive covers 0.138. Widen the fixture set before treating it as a general
 constant.
 
+## v0.4 generalization track
+
+Every core metric reached 100% in 0.3.0, on fixtures the ranker had been
+tuned against. Probed with queries it had never seen, the same ranker found
+the right memory in its top three only about half the time. 0.4.0 adds a
+track that measures that gap instead of hiding it
+(`src/lib/benchmark/generalization.ts`):
+
+- `dev` — cases ranking changes may be tuned against.
+- `holdout` — written before the 0.4.0 fixes, with a different corpus and
+  vocabulary, and not edited to make a change pass.
+
+| Metric | Dev before | Dev after | Holdout before | Holdout after |
+| --- | ---: | ---: | ---: | ---: |
+| Hit@3 | 53.8% | 76.9% | 55.6% | 83.3% |
+| Unknown-topic abstention | 100% | 100% | 50% | 50% |
+| Near-topic abstention | 0% | 0% | 0% | 0% |
+
+The fixes were diagnosed on dev, not fitted to it:
+
+- Terms under four letters match a whole word or its plural, not any
+  prefix. `app` matched `appwrite` and `appsmith`.
+- `hosted`, `logged` and similar map onto `-ing` cluster terms.
+- `log in`, `sign in` and `sign up` join into one token.
+- A query term the corpus cannot match is corrected when exactly one corpus
+  word is one edit away. Ambiguous typos are left alone.
+
+### Round 1: sibling-only terms
+
+`grpc streaming interceptors` was answered from an API memory: `grpc`
+reaches the corpus only through its concept sibling `api`, and that sibling
+match counted as full evidence the topic was known. Such a term now earns
+half its IDF mass. It still counts as a touched term, so one sibling can
+carry one unknown word (`how does auth work` -> RLS) but not two.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Dev unknown-topic abstention | 60% | 100% |
+| Holdout unknown-topic abstention | 33% | 67% |
+| Holdout Hit@3 | 84.2% | 78.9% |
+
+Three holdout cases were added before the fix was run. The Hit@3 cost is
+one case, `how are schema changes applied`, which has the same shape as the
+negatives: one sibling-only term and two unknown ones. Separating generic
+words from topical ones would need a curated vocabulary, so the floor was
+lowered to the measured value instead. For a coding agent, a wrong memory
+in context is costlier than none. `mongodb aggregation pipeline` still
+answers: two of its terms have siblings in the corpus.
+
+### Round 2: declined versus wrong
+
+Hit@3 cannot tell a stricter abstention gate from a worse ranking, and the
+two fail differently: an empty result costs an agent a lookup, a wrong one
+misleads it. Each split now reports `falseAbstentionRate`, the share of
+relevant cases that returned nothing.
+
+| Split | Hit@3 | False abstention | Answered wrongly |
+| --- | ---: | ---: | ---: |
+| Dev | 76.9% | 15.4% | 7.7% |
+| Holdout | 78.9% | 21.1% | 0% |
+
+Every holdout recall miss is a decline, not a wrong answer. The remaining
+misses are vocabulary gaps — `uploads` vs "stored in S3", `timezone` vs
+`UTC`, `admin pages` vs "owner role" — that only curated concept terms
+would close, and adding them from the holdout would be fitting it.
+
+Two ideas from other memory systems were checked against these fixtures and
+not adopted. Gating on the query's most specific term (abstain when the top
+hit misses it) fails here because on a small corpus the most specific terms
+are the ones it has never seen, so it rejects paraphrases along with
+near-topic questions. Multi-key indexing, which attaches derived keys to a
+memory at write time, is the likely route to the vocabulary gaps, but it is
+a write-path change rather than a ranking tweak.
+
+`benchmarks/baselines/generalization.json` records these as floors, not
+pins: a split may improve but must not fall below them. Near-topic
+abstention ("how many redis cluster shards" when only the Redis TTL is
+stored) is an open target. The ranker deliberately prefers a weak extra
+answer to none, so closing it needs a decision, not a threshold tweak.
+
 ## Scope hierarchy
 
 Repository memories are inherited throughout a repository. Branch memories are

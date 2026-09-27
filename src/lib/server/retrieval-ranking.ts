@@ -1,4 +1,4 @@
-import { conceptRelatedScore, expand, searchTokens } from './concepts.ts';
+import { conceptRelatedScore, expand, searchTokens, termMatchesToken } from './concepts.ts';
 import { extractEntities } from './entities.ts';
 
 export type RankableMemory = {
@@ -82,6 +82,15 @@ const RECENT_THRESHOLD = 0.5;
    a general threshold. */
 const MIN_KNOWN_QUERY_MASS = 0.18;
 
+/* A term the corpus reaches only through a concept sibling is evidence
+   the topic is nearby, not that it is covered. It earns half its IDF in
+   the mass check while still counting as a touched term in the share
+   check. Effect: one sibling can carry a query with one unknown word
+   ("how does auth work" -> RLS, mass 0.25), not one with two ("grpc
+   streaming interceptors", mass 1/6). Applying the half to the share
+   check as well would drop that two-word concept recall. */
+const SIBLING_MASS_CREDIT = 0.5;
+
 const PROVENANCE_TYPES = new Set([
   'user',
   'agent',
@@ -96,9 +105,10 @@ function textOf(memory: RankableMemory): string {
   return `${memory.title ?? ''} ${memory.content}`;
 }
 
-function tokenMatches(token: string, term: string): boolean {
-  return token === term || token.startsWith(term);
-}
+/* Shared with concepts.ts so lexical scoring and concept expansion agree
+   on what a match is. A private `startsWith` here let `app` match
+   `appwrite` in BM25 even after the concept layer stopped doing so. */
+const tokenMatches = termMatchesToken;
 
 function bm25Scores(tokenized: readonly string[][], queryTerms: readonly string[]): number[] {
   if (!tokenized.length || !queryTerms.length) return tokenized.map(() => 0);
@@ -165,8 +175,11 @@ function knownQueryEvidence(
     );
     const idf = Math.log(1 + (tokenized.length - df + 0.5) / (df + 0.5));
     total += idf;
-    if (df > 0 || expand(term).related.some(matchesAnywhere)) {
+    if (df > 0) {
       known += idf;
+      termCount++;
+    } else if (expand(term).related.some(matchesAnywhere)) {
+      known += idf * SIBLING_MASS_CREDIT;
       termCount++;
     }
   }
@@ -197,6 +210,53 @@ function hasDistinctiveLiteral(
       (count, tokens) => count + Number(tokens.includes(term)),
       0,
     ) === 1;
+  });
+}
+
+/* Typo tolerance, kept narrow on purpose. Four-letter words sit one edit
+   from too many real words (`test`/`text`/`best`) for a correction to be
+   a correction rather than a guess. */
+const MIN_TYPO_LENGTH = 5;
+
+/* One insertion, deletion, substitution, or adjacent transposition —
+   the optimal-string-alignment distance-1 test, without building the
+   full matrix. `vitset` -> `vitest` is a transposition. */
+function withinOneEdit(left: string, right: string): boolean {
+  if (left === right || Math.abs(left.length - right.length) > 1) return false;
+  let at = 0;
+  while (at < left.length && at < right.length && left[at] === right[at]) at++;
+  if (left.length === right.length) {
+    if (left.slice(at + 1) === right.slice(at + 1)) return true;
+    return (
+      at + 1 < left.length &&
+      left[at] === right[at + 1] &&
+      left[at + 1] === right[at] &&
+      left.slice(at + 2) === right.slice(at + 2)
+    );
+  }
+  return left.length > right.length
+    ? left.slice(at + 1) === right.slice(at)
+    : left.slice(at) === right.slice(at + 1);
+}
+
+/* Rewrites a query term to the corpus word it misspells. Only a term the
+   corpus cannot otherwise match is touched, only when exactly one corpus
+   word is one edit away, and never a curated concept term, so a correct
+   query can never be rewritten and an ambiguous typo stays unanswered
+   rather than guessed. */
+function correctTypos(tokenized: readonly string[][], terms: readonly string[]): string[] {
+  let vocabulary: Set<string> | undefined;
+  return terms.map((term) => {
+    if (term.length < MIN_TYPO_LENGTH || expand(term).related.length) return term;
+    if (tokenized.some((tokens) => tokens.some((token) => tokenMatches(token, term)))) return term;
+    vocabulary ??= new Set(tokenized.flat());
+    let correction: string | undefined;
+    for (const word of vocabulary) {
+      if (word.length < MIN_TYPO_LENGTH || !withinOneEdit(term, word)) continue;
+      if (correction !== undefined) return term;
+      correction = word;
+    }
+    return correction ?? term;
   });
 }
 
@@ -305,7 +365,7 @@ function scoreMemories<T extends RankableMemory>(
 
 function scoreRelevance<T extends RankableMemory>(
   memories: readonly T[],
-  expanded: ReturnType<typeof expand>,
+  typed: ReturnType<typeof expand>,
   queryEntities: Set<string>,
   context: { temporal: boolean; asOfMs: number },
 ): { scored: ScoredMemory<T>[]; topicKnown: boolean } {
@@ -315,6 +375,12 @@ function scoreRelevance<T extends RankableMemory>(
     memory.title?.trim() === memory.content.trim() ? [] : searchTokens(memory.content),
   );
   const tokenized = titleTokens.map((title, index) => [...title, ...contentTokens[index]]);
+  /* Corrected before scoring so BM25, coverage, concept expansion and the
+     abstention check all see the same terms. */
+  const corrected = correctTypos(tokenized, typed.exact);
+  const expanded = corrected.some((term, index) => term !== typed.exact[index])
+    ? expand(corrected.join(' '))
+    : typed;
   const titleBm25 = bm25Scores(titleTokens, expanded.exact);
   const contentBm25 = bm25Scores(contentTokens, expanded.exact);
   const bm25 = titleBm25.map(

@@ -65,14 +65,19 @@ async function recordApiRequest(input: {
   });
 }
 
+/* Routes with their own wire format (the MCP endpoint answers in JSON-RPC)
+   pass `failWith` so auth and server failures keep that format. */
+type FailureFormatter = (status: number, error: string) => Response;
+
 export async function withAuthenticatedRequest(
   request: Request,
   operation: string,
   run: (auth: AuthSuccess) => Response | Promise<Response>,
+  failWith: FailureFormatter = fail,
 ): Promise<Response> {
   const startedAt = performance.now();
   const auth = await authenticate(request);
-  if (!auth.ok) return fail(auth.status, auth.error);
+  if (!auth.ok) return failWith(auth.status, auth.error);
 
   let status = 500;
   let durationMs = 0;
@@ -106,7 +111,7 @@ export async function withAuthenticatedRequest(
       route: new URL(request.url).pathname,
       userId: auth.userId,
     });
-    return fail(500, 'Brainfeather could not complete this request.');
+    return failWith(500, 'Brainfeather could not complete this request.');
   } finally {
     durationMs = performance.now() - startedAt;
   }
@@ -120,9 +125,10 @@ type RouteHandler<Args extends unknown[]> = (
 export function withRequestTelemetry<Args extends unknown[]>(
   operation: string,
   handler: RouteHandler<Args>,
+  failWith?: FailureFormatter,
 ): RouteHandler<Args> {
   return async (request, ...args) =>
-    withAuthenticatedRequest(request, operation, () => handler(request, ...args));
+    withAuthenticatedRequest(request, operation, () => handler(request, ...args), failWith);
 }
 
 export async function readRequestAnalytics(

@@ -40,7 +40,8 @@ async function mcp(request: Request) {
 function withMcpAccess(
   handler: typeof mcp,
 ): typeof mcp {
-  return async (request) => withCors(await withRequestTelemetry('mcp.http', handler)(request));
+  return async (request) =>
+    withCors(await withRequestTelemetry('mcp.http', handler, mcpError)(request));
 }
 
 /* Stateless server: there is no session to stream to or delete. Answering

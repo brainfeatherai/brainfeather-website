@@ -8,14 +8,12 @@ import SiteFooter from "@/components/SiteFooter";
 import WaitlistForm from "@/components/WaitlistForm";
 import Reveal from "@/components/Reveal";
 import StructuredData from "@/components/StructuredData";
+import { pageMetadata } from "@/lib/share-metadata";
 
 /* Own canonical + og:url, rather than inheriting from the root layout:
    a root-level canonical is inherited by EVERY child, which made the
    legal routes all point here and read as duplicates. */
-export const metadata: Metadata = {
-  alternates: { canonical: "/" },
-  openGraph: { url: "/" },
-};
+export const metadata: Metadata = pageMetadata({ path: "/" });
 
 /* ── dotted glyph, the recurring marker motif ── */
 function DotGlyph({ variant = "ring" }: { variant?: "ring" | "grid" | "fade" }) {

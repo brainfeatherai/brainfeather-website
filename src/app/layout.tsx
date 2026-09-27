@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { Outfit, Geist_Mono } from "next/font/google";
 import { SITE_URL as SITE } from "@/lib/site";
+import {
+  baseOpenGraph,
+  baseTwitter,
+  SITE_DESCRIPTION as DESCRIPTION,
+  SITE_TITLE as TITLE,
+} from "@/lib/share-metadata";
 import "./globals.css";
 
 /* The type the design actually specifies, self-hosted by next/font.
@@ -26,10 +32,6 @@ const geistMono = Geist_Mono({
   display: "swap",
   variable: "--font-geist-mono",
 });
-
-const TITLE = "Brainfeather — Long-term memory for AI agents";
-const DESCRIPTION =
-  "The memory layer that sits under Claude Code, Cursor and your own agents: it records the facts that matter and hands them back on the next run.";
 
 /* `metadataBase` is what makes every relative URL below resolve to an
    absolute one. Without it, Next falls back to the deployment URL —
@@ -60,22 +62,11 @@ export const metadata: Metadata = {
      /privacy, /terms and /contact each declare the homepage as their
      canonical — which tells search engines those pages are duplicates
      and to index the homepage instead. Each route sets its own. */
-  openGraph: {
-    type: "website",
-    siteName: "Brainfeather",
-    title: TITLE,
-    description: DESCRIPTION,
-    locale: "en_GB",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: TITLE,
-    description: DESCRIPTION,
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  openGraph: { ...baseOpenGraph, title: TITLE, description: DESCRIPTION },
+  twitter: { ...baseTwitter, title: TITLE, description: DESCRIPTION },
+  /* No root `robots`. index/follow is already the default when the tag
+     is absent, and emitting it here collided with the `noindex` Next
+     injects on 404 responses — the not-found page shipped both tags. */
   /* Google Search Console ownership proof. Emitted as
      <meta name="google-site-verification" content="..." />.
 

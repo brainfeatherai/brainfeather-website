@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CONTACT_EMAIL } from "@/lib/site";
+import { pageMetadata } from "@/lib/share-metadata";
 import {
   Bullets,
   Callout,
@@ -12,15 +13,14 @@ import {
   Sub,
 } from "@/components/LegalProse";
 
-export const metadata: Metadata = {
-  /* No "— Brainfeather" suffix: the root layout's title template adds
-     it, so spelling it out here would render it twice. */
+/* No "— Brainfeather" suffix: the root layout's title template adds
+   it, so spelling it out here would render it twice. */
+export const metadata: Metadata = pageMetadata({
+  path: "/privacy",
   title: "Privacy Policy",
-  alternates: { canonical: "/privacy" },
-  openGraph: { url: "/privacy" },
   description:
     "What Brainfeather collects, what it stores from your coding sessions, how long it keeps it, and how to get it deleted.",
-};
+});
 
 /* Hardcoded, not `new Date()`: a computed date would silently change
    on every rebuild and misrepresent when the terms last changed. */

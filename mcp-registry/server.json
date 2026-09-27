@@ -3,7 +3,7 @@
   "name": "com.brainfeather/mcp",
   "title": "Brainfeather",
   "description": "Long-term memory for AI coding agents: durable project facts, recalled by every MCP client.",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "websiteUrl": "https://brainfeather.com/ai-agent-memory",
   "remotes": [
     {
@@ -20,6 +20,24 @@
           "name": "x-brainfeather-project",
           "description": "Repository the memories belong to, e.g. github.com/you/your-repo",
           "isRequired": false
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@brainfeather/mcp",
+      "version": "1.6.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "BRAINFEATHER_API_KEY",
+          "description": "Your Brainfeather API key, from https://brainfeather.com/api-keys",
+          "isRequired": true,
+          "isSecret": true
         }
       ]
     }

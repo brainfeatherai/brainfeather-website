@@ -1,5 +1,5 @@
-import { authenticate, fail } from '@/lib/server/api-auth';
-import { handleHostedMcp, HOSTED_MCP_CORS } from '@/lib/server/hosted-mcp';
+import { authenticate } from '@/lib/server/api-auth';
+import { handleHostedMcp, HOSTED_MCP_CORS, mcpError } from '@/lib/server/hosted-mcp';
 import { withRequestTelemetry } from '@/lib/server/request-telemetry';
 import { memoryScope } from '@/lib/server/validate';
 
@@ -20,19 +20,19 @@ async function mcp(request: Request) {
   }
 
   const auth = await authenticate(request);
-  if (!auth.ok) return fail(auth.status, auth.error);
+  if (!auth.ok) return mcpError(auth.status, auth.error);
 
   const projectIdHeader = request.headers.get('x-brainfeather-project');
   const projectIdParam = new URL(request.url).searchParams.get('projectId');
   const rawProject = projectIdHeader ?? projectIdParam;
   if (!rawProject) {
-    return fail(
+    return mcpError(
       400,
-      'Hosted MCP needs x-brainfeather-project (or ?projectId=) because there is no local workspace root.',
+      'Hosted MCP needs an x-brainfeather-project header (or ?projectId=) naming the repository, because there is no local workspace root.',
     );
   }
   const parsed = memoryScope({ projectId: rawProject });
-  if (!parsed.ok) return fail(400, parsed.error);
+  if (!parsed.ok) return mcpError(400, parsed.error);
 
   return handleHostedMcp(request, auth.userId, parsed.value.projectId!);
 }
@@ -43,7 +43,19 @@ function withMcpAccess(
   return async (request) => withCors(await withRequestTelemetry('mcp.http', handler)(request));
 }
 
-export const GET = withMcpAccess(mcp);
+/* Stateless server: there is no session to stream to or delete. Answering
+   GET before auth also stops clients that probe for an SSE stream from
+   holding a function open until maxDuration. */
+function methodNotAllowed() {
+  return withCors(
+    Response.json(
+      { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed. Send JSON-RPC over POST.' }, id: null },
+      { status: 405, headers: { Allow: 'POST, OPTIONS' } },
+    ),
+  );
+}
+
+export const GET = methodNotAllowed;
+export const DELETE = methodNotAllowed;
 export const POST = withMcpAccess(mcp);
-export const DELETE = withMcpAccess(mcp);
 export const OPTIONS = mcp;

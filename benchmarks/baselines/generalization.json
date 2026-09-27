@@ -1,0 +1,24 @@
+{
+  "benchmark": "0.4.0",
+  "baseline": "brainfeather-1.5.2",
+  "extends": "negative-query-abstention.json",
+  "note": "Floors, not targets: a split may improve freely but must not fall below these. Measured after the 0.4.0 ranking fixes (short-term exact matching, -ing stems, two-word phrases, one-edit typo correction). The holdout split was written before those fixes and was not tuned against.",
+  "floors": {
+    "dev.hitAtThree": 0.769,
+    "dev.abstentionAccuracy": 1,
+    "holdout.hitAtThree": 0.833,
+    "holdout.abstentionAccuracy": 0.5
+  },
+  "targets": {
+    "holdout.abstentionAccuracy": { "current": 0.5, "target": 1 },
+    "dev.nearTopicAbstention": { "current": 0, "target": 1 },
+    "holdout.nearTopicAbstention": { "current": 0, "target": 1 }
+  },
+  "history": [
+    {
+      "version": "0.4.0",
+      "before": { "dev.hitAtThree": 0.538, "holdout.hitAtThree": 0.556 },
+      "after": { "dev.hitAtThree": 0.769, "holdout.hitAtThree": 0.833 }
+    }
+  ]
+}

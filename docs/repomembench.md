@@ -87,6 +87,39 @@ theory — the weakest true positive covers 0.234 of query mass and the false
 positive covers 0.138. Widen the fixture set before treating it as a general
 constant.
 
+## v0.4 generalization track
+
+Every core metric reached 100% in 0.3.0, on fixtures the ranker had been
+tuned against. Probed with queries it had never seen, the same ranker found
+the right memory in its top three only about half the time. 0.4.0 adds a
+track that measures that gap instead of hiding it
+(`src/lib/benchmark/generalization.ts`):
+
+- `dev` — cases ranking changes may be tuned against.
+- `holdout` — written before the 0.4.0 fixes, with a different corpus and
+  vocabulary, and not edited to make a change pass.
+
+| Metric | Dev before | Dev after | Holdout before | Holdout after |
+| --- | ---: | ---: | ---: | ---: |
+| Hit@3 | 53.8% | 76.9% | 55.6% | 83.3% |
+| Unknown-topic abstention | 100% | 100% | 50% | 50% |
+| Near-topic abstention | 0% | 0% | 0% | 0% |
+
+The fixes were diagnosed on dev, not fitted to it:
+
+- Terms under four letters match a whole word or its plural, not any
+  prefix. `app` matched `appwrite` and `appsmith`.
+- `hosted`, `logged` and similar map onto `-ing` cluster terms.
+- `log in`, `sign in` and `sign up` join into one token.
+- A query term the corpus cannot match is corrected when exactly one corpus
+  word is one edit away. Ambiguous typos are left alone.
+
+`benchmarks/baselines/generalization.json` records these as floors, not
+pins: a split may improve but must not fall below them. Near-topic
+abstention ("how many redis cluster shards" when only the Redis TTL is
+stored) is an open target. The ranker deliberately prefers a weak extra
+answer to none, so closing it needs a decision, not a threshold tweak.
+
 ## Scope hierarchy
 
 Repository memories are inherited throughout a repository. Branch memories are

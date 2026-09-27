@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { baselinePasses, runRepoMemBench } from './repomembench.ts';
 
-test('preserves the Brainfeather 1.5.2 baseline in RepoMemBench v0.2', () => {
+test('preserves the Brainfeather 1.5.2 baseline in RepoMemBench v0.4', () => {
   const report = runRepoMemBench({ iterations: 5 });
-  assert.equal(report.benchmark, '0.3.0');
+  assert.equal(report.benchmark, '0.4.0');
   assert.equal(report.retrieval.abstentionAccuracy, 1);
   assert.equal(report.baseline, 'brainfeather-1.5.2');
   assert.equal(report.retrieval.staleRecallRate, 0);
@@ -27,6 +27,21 @@ test('enforces exact protected metrics from the baseline artifact', () => {
   const taskRankingRegression = structuredClone(report);
   taskRankingRegression.capabilities.taskIsolation.rankingAccuracy = 0.5;
   assert.equal(baselinePasses(taskRankingRegression), false);
+});
+
+/* Floors, not pins: an improvement passes, a regression below the
+   recorded floor fails. */
+test('enforces generalization floors without pinning them', () => {
+  const report = runRepoMemBench({ iterations: 1 });
+  const improved = structuredClone(report);
+  improved.generalization.holdout.hitAtThree = 1;
+  assert.equal(baselinePasses(improved), true);
+  const regressed = structuredClone(report);
+  regressed.generalization.holdout.hitAtThree = 0.8;
+  assert.equal(baselinePasses(regressed), false);
+  const abstentionRegressed = structuredClone(report);
+  abstentionRegressed.generalization.dev.abstentionAccuracy = 0.5;
+  assert.equal(baselinePasses(abstentionRegressed), false);
 });
 
 test('protects branch and task isolation as supported capabilities', () => {

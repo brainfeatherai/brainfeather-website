@@ -136,6 +136,31 @@ lowered to the measured value instead. For a coding agent, a wrong memory
 in context is costlier than none. `mongodb aggregation pipeline` still
 answers: two of its terms have siblings in the corpus.
 
+### Round 2: declined versus wrong
+
+Hit@3 cannot tell a stricter abstention gate from a worse ranking, and the
+two fail differently: an empty result costs an agent a lookup, a wrong one
+misleads it. Each split now reports `falseAbstentionRate`, the share of
+relevant cases that returned nothing.
+
+| Split | Hit@3 | False abstention | Answered wrongly |
+| --- | ---: | ---: | ---: |
+| Dev | 76.9% | 15.4% | 7.7% |
+| Holdout | 78.9% | 21.1% | 0% |
+
+Every holdout recall miss is a decline, not a wrong answer. The remaining
+misses are vocabulary gaps — `uploads` vs "stored in S3", `timezone` vs
+`UTC`, `admin pages` vs "owner role" — that only curated concept terms
+would close, and adding them from the holdout would be fitting it.
+
+Two ideas from other memory systems were checked against these fixtures and
+not adopted. Gating on the query's most specific term (abstain when the top
+hit misses it) fails here because on a small corpus the most specific terms
+are the ones it has never seen, so it rejects paraphrases along with
+near-topic questions. Multi-key indexing, which attaches derived keys to a
+memory at write time, is the likely route to the vocabulary gaps, but it is
+a write-path change rather than a ranking tweak.
+
 `benchmarks/baselines/generalization.json` records these as floors, not
 pins: a split may improve but must not fall below them. Near-topic
 abstention ("how many redis cluster shards" when only the Redis TTL is

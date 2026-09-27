@@ -43,6 +43,10 @@ export type SplitMetrics = {
   hitAtOne: number;
   hitAtThree: number;
   mrr: number;
+  /* Relevant cases that returned nothing at all. Hit@3 alone cannot tell
+     a stricter abstention gate (declined) from a worse ranking (answered
+     wrongly); the two fail differently for an agent, so report both. */
+  falseAbstentionRate: number;
   /* Unknown topic: nothing in the corpus is about it. */
   abstentionAccuracy: number;
   /* Known topic, unknown answer: "redis cluster shards" when only the
@@ -168,6 +172,7 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
   let hitAtOne = 0;
   let hitAtThree = 0;
   let reciprocal = 0;
+  let falseAbstained = 0;
   let negatives = 0;
   let abstained = 0;
   let nearTopic = 0;
@@ -180,6 +185,7 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
     let correct: boolean;
     if (item.expected !== null) {
       relevant++;
+      if (ranked.length === 0) falseAbstained++;
       const position = ranked.indexOf(item.expected);
       if (position === 0) hitAtOne++;
       if (position >= 0) reciprocal += 1 / (position + 1);
@@ -207,6 +213,7 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
     hitAtOne: share(hitAtOne, relevant),
     hitAtThree: share(hitAtThree, relevant),
     mrr: share(reciprocal, relevant),
+    falseAbstentionRate: relevant ? falseAbstained / relevant : 0,
     abstentionAccuracy: share(abstained, negatives),
     nearTopicAbstention: share(nearAbstained, nearTopic),
     byKind,

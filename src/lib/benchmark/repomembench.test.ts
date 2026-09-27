@@ -39,6 +39,10 @@ test('enforces generalization floors without pinning them', () => {
   const regressed = structuredClone(report);
   regressed.generalization.holdout.hitAtThree = 0.7;
   assert.equal(baselinePasses(regressed), false);
+  /* A declined relevant query is a miss; it can never exceed the misses. */
+  for (const split of [report.generalization.dev, report.generalization.holdout]) {
+    assert.ok(split.falseAbstentionRate <= 1 - split.hitAtThree + 1e-9);
+  }
   const abstentionRegressed = structuredClone(report);
   abstentionRegressed.generalization.dev.abstentionAccuracy = 0.5;
   assert.equal(baselinePasses(abstentionRegressed), false);

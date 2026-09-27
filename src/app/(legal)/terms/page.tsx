@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CONTACT_EMAIL } from "@/lib/site";
+import { pageMetadata } from "@/lib/share-metadata";
 import {
   Bullets,
   Callout,
@@ -12,14 +13,13 @@ import {
   Sub,
 } from "@/components/LegalProse";
 
-export const metadata: Metadata = {
-  /* Suffix omitted — the root layout's title template appends it. */
+/* Suffix omitted — the root layout's title template appends it. */
+export const metadata: Metadata = pageMetadata({
+  path: "/terms",
   title: "Terms of Service",
-  alternates: { canonical: "/terms" },
-  openGraph: { url: "/terms" },
   description:
     "The terms that govern your use of Brainfeather, including acceptable use, who owns what, and the limits of an early-development service.",
-};
+});
 
 const UPDATED = "8 August 2026";
 

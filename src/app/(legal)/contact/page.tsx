@@ -2,15 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SocialLinks } from "@/components/SiteFooter";
 import { CONTACT_EMAIL, mailto } from "@/lib/site";
+import { pageMetadata } from "@/lib/share-metadata";
 
-export const metadata: Metadata = {
-  /* Suffix omitted — the root layout's title template appends it. */
+/* Suffix omitted — the root layout's title template appends it. */
+export const metadata: Metadata = pageMetadata({
+  path: "/contact",
   title: "Contact",
-  alternates: { canonical: "/contact" },
-  openGraph: { url: "/contact" },
   description:
     "Get in touch with Brainfeather: support, security reports, privacy requests, and press.",
-};
+});
 
 /* ────────────────────────────────────────────────────────────────
    One inbox, several reasons to use it. Rather than a single mailto,

@@ -22,13 +22,14 @@ export default async function AuthCallbackPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { userId, secret } = await searchParams;
+  const { userId, secret, invite } = await searchParams;
 
   // Repeated params arrive as arrays; only a single string is valid here.
   return (
     <OAuthCallback
       userId={typeof userId === "string" ? userId : null}
       secret={typeof secret === "string" ? secret : null}
+      inviteId={typeof invite === "string" ? invite : null}
     />
   );
 }

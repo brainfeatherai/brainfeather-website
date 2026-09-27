@@ -1,4 +1,5 @@
 import { account } from '@/lib/appwrite';
+import { buildOAuthRedirectUrls, dashboardSessionPath } from '@/lib/invitation-auth';
 import { OAuthProvider } from 'appwrite';
 
 export class AccountApiError extends Error {
@@ -43,11 +44,12 @@ export const authService = {
     return await account.createJWT({ duration: 3600 });
   },
 
-  signInWithGoogle(origin: string) {
+  signInWithGoogle(origin: string, inviteId?: string) {
+    const { success, failure } = buildOAuthRedirectUrls(origin, inviteId);
     return account.createOAuth2Token({
       provider: OAuthProvider.Google,
-      success: `${origin}/auth/callback`,
-      failure: `${origin}/login?error=oauth`,
+      success,
+      failure,
     });
   },
 
@@ -55,6 +57,21 @@ export const authService = {
      been approved, so exposing Google here does not weaken invite-only access. */
   async completeOAuth(userId: string, secret: string) {
     return await account.createSession({ userId, secret });
+  },
+
+  async verifyDashboardSession(jwt: string, inviteId?: string) {
+    const response = await fetch(dashboardSessionPath(inviteId), {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: 'no-store',
+    });
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) {
+      throw new AccountApiError(
+        response.status,
+        body?.error ?? 'Could not verify dashboard access.',
+      );
+    }
+    return body;
   },
 
   /* Idempotent profile row.

@@ -35,6 +35,7 @@ export async function POST(request: Request) {
 
   const alreadyApproved = row.approved === true;
   try {
+    await sendWaitlistApprovalEmail(row.email, rowId);
     if (!alreadyApproved) {
       await adminTables.updateRow({
         databaseId: DATABASE_ID,
@@ -43,7 +44,6 @@ export async function POST(request: Request) {
         data: { approved: true },
       });
     }
-    await sendWaitlistApprovalEmail(row.email, rowId);
     return redirect(request, alreadyApproved ? 'resent' : 'approved', {
       rowId,
       expires,

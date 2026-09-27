@@ -1,7 +1,10 @@
 import 'server-only';
 
 import { ID, Query, type Models } from 'node-appwrite';
-import { normalizeWaitlistEmail } from '../waitlist-email-address.ts';
+import {
+  normalizeWaitlistEmail,
+  waitlistEmailsMatch,
+} from '../waitlist-email-address.ts';
 import { adminTables, COLLECTIONS, DATABASE_ID } from './appwrite-admin';
 
 export const WAITLIST_COOKIE = 'brainfeather_waitlist';
@@ -116,7 +119,7 @@ export async function approvedWaitlistRequest(
 ): Promise<WaitlistRow | null> {
   const row = await getWaitlistRequest(rowId);
   if (!row || row.approved !== true) return null;
-  if (email && row.email !== normalizeWaitlistEmail(email)) return null;
+  if (email && !waitlistEmailsMatch(row.email, email)) return null;
   return row;
 }
 

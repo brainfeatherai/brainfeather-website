@@ -46,7 +46,7 @@ type AuthState = {
   refreshJwt: () => Promise<string | null>;
   /** True until the initial session probe settles. Distinct from "no user". */
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, inviteId?: string) => Promise<void>;
   signup: (email: string, password: string, name: string, inviteId: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -170,9 +170,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user, jwtError, refreshJwt]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, inviteId?: string) => {
     const generation = ++authGeneration.current;
-    await authService.createEmailSession(email, password);
+    const accountEmail = normalizeWaitlistEmail(email);
+    await authService.createEmailSession(accountEmail, password);
     let current: SessionUser | null = null;
     try {
       current = await authService.getCurrentUser();
@@ -181,6 +182,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         setUser(current);
         const accessJwt = await refreshJwt();
         if (!accessJwt) throw new Error('Could not establish dashboard access.');
+        await authService.verifyDashboardSession(accessJwt, inviteId);
         await authService.ensureProfile(accessJwt);
         setUser(current);
       }
@@ -213,6 +215,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           setUser(current);
           const accessJwt = await refreshJwt();
           if (!accessJwt) throw new Error('Could not establish dashboard access.');
+          await authService.verifyDashboardSession(accessJwt, inviteId);
           await authService.ensureProfile(accessJwt);
           setUser(current);
         }

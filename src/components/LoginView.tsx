@@ -26,7 +26,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { authService } from "@/services/appwrite";
+import { AccountApiError, authService } from "@/services/appwrite";
 
 const FIELD =
   "hairline h-11 w-full rounded-full border bg-paper px-5 text-[14px] text-forest placeholder:text-forest/35 focus:border-emerald/50 focus:outline-none focus:ring-2 focus:ring-emerald/20";
@@ -73,7 +73,7 @@ export default function LoginView({
   inviteEmail: string | null;
   initialError: string | null;
 }) {
-  const { user, loading, login, signup, jwtError } = useAuth();
+  const { user, loading, login, signup, logout, refreshJwt, jwtError } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<"signin" | "signup">(inviteId ? "signup" : "signin");
@@ -86,10 +86,40 @@ export default function LoginView({
 
   const isSignup = mode === "signup";
 
-  // Already signed in? Skip the form. A navigation, not a state write.
+  // An invitation must match even when this browser already has a session.
   useEffect(() => {
-    if (!loading && user) router.replace("/overview");
-  }, [loading, user, router]);
+    if (loading || !user) return;
+    if (!inviteId) {
+      router.replace("/overview");
+      return;
+    }
+
+    let active = true;
+    void (async () => {
+      try {
+        const jwt = await refreshJwt();
+        if (!jwt) throw new Error('Could not verify dashboard access.');
+        await authService.verifyDashboardSession(jwt, inviteId);
+        if (active) router.replace("/overview");
+      } catch (error) {
+        const denied = error instanceof AccountApiError &&
+          (error.status === 401 || error.status === 403);
+        if (denied) {
+          await logout().catch(() => {});
+        }
+        if (active && denied) {
+          const query = new URLSearchParams({ invite: inviteId, error: 'invite' });
+          window.location.replace(`/login?${query}`);
+        } else if (active) {
+          setError('Dashboard access is temporarily unavailable. Try again in a moment.');
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [loading, user, inviteId, logout, refreshJwt, router]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,7 +130,7 @@ export default function LoginView({
         if (!inviteId) throw new Error("A valid Brainfeather invitation is required.");
         await signup(email, password, name.trim(), inviteId);
       }
-      else await login(email, password);
+      else await login(email, password, inviteId ?? undefined);
       router.replace("/overview");
     } catch (err) {
       setError(readableError(err));
@@ -112,7 +142,10 @@ export default function LoginView({
     setError(null);
     setPending(true);
     try {
-      const redirect = authService.signInWithGoogle(window.location.origin);
+      const redirect = authService.signInWithGoogle(
+        window.location.origin,
+        inviteId ?? undefined,
+      );
       if (typeof redirect === "string") window.location.assign(redirect);
     } catch (err) {
       setError(readableError(err));
@@ -249,9 +282,10 @@ export default function LoginView({
                 autoComplete="email"
                 placeholder="you@company.com"
                 aria-invalid={banner ? true : undefined}
+                readOnly={Boolean(inviteEmail)}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={FIELD}
+                className={`${FIELD} read-only:cursor-not-allowed read-only:bg-forest/[0.04] read-only:text-forest/65`}
               />
             </div>
 
@@ -329,7 +363,9 @@ export default function LoginView({
           </button>
 
           <p className="mt-3 text-center text-[11px] leading-5 text-forest/42">
-            Use an approved Google account. Unapproved accounts cannot enter the console.
+            {inviteEmail
+              ? `Continue with the Google account for ${inviteEmail}. Other accounts will be rejected.`
+              : 'Use an approved Google account. Unapproved accounts cannot enter the console.'}
           </p>
 
           {inviteId ? (

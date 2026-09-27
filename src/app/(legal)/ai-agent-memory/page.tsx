@@ -181,6 +181,27 @@ export default function AgentMemoryPage() {
         </code>{" "}
         once, which sets up automatic recall in Claude Code, Cursor and OpenCode.
       </p>
+      <p className={P}>
+        Brainfeather is listed in the{" "}
+        <a
+          href="https://registry.modelcontextprotocol.io/v0/servers?search=com.brainfeather/mcp"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-emerald underline decoration-emerald/30 underline-offset-2 hover:decoration-emerald"
+        >
+          official MCP Registry
+        </a>{" "}
+        and on{" "}
+        <a
+          href="https://smithery.ai/servers/getbrainfeather/brainfeather"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-emerald underline decoration-emerald/30 underline-offset-2 hover:decoration-emerald"
+        >
+          Smithery
+        </a>
+        .
+      </p>
 
       <h2 className={H2}>Questions</h2>
       <dl className="mt-4 divide-y divide-forest/10">

@@ -55,12 +55,17 @@ HTTP MCP is at https://brainfeather.com/mcp.
 
 - [Home](${SITE_URL}/): what it is and how it works.
 - [Request access](${SITE_URL}/#waitlist): join the invite-only waitlist.
-- [Hosted MCP](${SITE_URL}/mcp): Streamable HTTP for clients that cannot run local stdio.
-- [API keys](${SITE_URL}/api-keys): create a key, then pin @brainfeather/mcp@1.6.1 and run init.
-- [Review queue](${SITE_URL}/review): inferred captures wait here until approved. They do not enter recall on their own.
 - [Contact](${SITE_URL}/contact): support, security reports, press.
 - [Privacy Policy](${SITE_URL}/privacy): what is collected and stored, and for how long.
 - [Terms of Service](${SITE_URL}/terms): the terms of use.
+
+## Console and API access
+
+These dashboard routes require sign-in and return the login page to anonymous visitors:
+
+- ${SITE_URL}/overview — dashboard summary.
+- ${SITE_URL}/api-keys — create the API key an MCP client connects with.
+- ${SITE_URL}/review — approve inferred memory candidates.
 
 ## Contact
 

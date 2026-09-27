@@ -56,6 +56,27 @@ test('uses query-aware ranking while preserving grouped output', () => {
   assert.equal(context.decisions[0], rows[1].content);
 });
 
+test('preserves ranker abstention instead of filling with unrelated newest memories', () => {
+  const rows = [
+    memory('api', 'project', 'Deploy the backend API to Vercel.', 0),
+    memory('database', 'decision', 'Use Postgres for application data.', 1),
+  ];
+  const context = compileContext(rows, {
+    query: 'native ios deployment target',
+    maxTokens: 500,
+    asOfMs: NOW,
+    includeExplanations: true,
+  });
+
+  assert.deepEqual(context, {
+    facts: [],
+    decisions: [],
+    patterns: [],
+    counts: { facts: 0, decisions: 0, patterns: 0, total: 0 },
+    explanations: { facts: [], decisions: [], patterns: [] },
+  });
+});
+
 test('does not spend a diversity slot twice on the pinned result group', () => {
   const rows = [
     memory('top', 'decision', 'Use Postgres for authentication data.', 1),
@@ -124,4 +145,35 @@ test('hook-sized token budgets fetch a smaller decrypt window', () => {
   assert.equal(recallFetchLimit(1_600), 40);
   assert.equal(recallFetchLimit(1_601), 100);
   assert.equal(recallFetchLimit(4_000), 100);
+});
+
+test('opt-in explanations zip with the content arrays per group', () => {
+  const rows = [
+    memory('decision', 'decision', 'Use Postgres for production data.', 2),
+    memory('pattern', 'code', 'Colocate Vitest files with source.', 3),
+    memory('fact', 'project', 'Deploy the API to Vercel.', 1),
+  ];
+  const plain = compileContext(rows, { maxTokens: 500, asOfMs: NOW });
+  assert.equal('explanations' in plain, false);
+
+  const context = compileContext(rows, {
+    query: 'production data',
+    maxTokens: 500,
+    asOfMs: NOW,
+    includeExplanations: true,
+  });
+  assert.equal(context.explanations?.decisions.length, context.decisions.length);
+  assert.equal(context.explanations?.patterns.length, context.patterns.length);
+  assert.equal(context.explanations?.facts.length, context.facts.length);
+  const explained = [
+    ...(context.explanations?.decisions ?? []),
+    ...(context.explanations?.patterns ?? []),
+    ...(context.explanations?.facts ?? []),
+  ].filter((explanation) => explanation !== null);
+  assert.ok(explained.length > 0);
+  for (const explanation of explained) {
+    assert.ok(explanation.reasons.every((reason) => typeof reason === 'string'));
+    assert.ok(explanation.matchedTerms.every((term) => typeof term === 'string'));
+    assert.ok(explanation.confidence >= 0 && explanation.confidence <= 1);
+  }
 });

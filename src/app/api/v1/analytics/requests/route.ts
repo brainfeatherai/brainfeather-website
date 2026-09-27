@@ -7,9 +7,13 @@ export async function GET(request: Request) {
   const auth = await authenticateDashboard(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
-  const rawDays = Number(new URL(request.url).searchParams.get('days'));
-  const windowDays = Number.isFinite(rawDays)
-    ? Math.min(Math.max(Math.floor(rawDays), 1), 90)
+  /* `Number(null)` is 0, which is finite — so a missing ?days= must be
+     caught before the conversion or the clamp turns it into a 1-day
+     window instead of falling back to 30. */
+  const rawDays = new URL(request.url).searchParams.get('days');
+  const parsedDays = rawDays === null ? NaN : Number(rawDays);
+  const windowDays = Number.isFinite(parsedDays)
+    ? Math.min(Math.max(Math.floor(parsedDays), 1), 90)
     : 30;
 
   try {

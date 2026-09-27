@@ -111,6 +111,23 @@ test('round-trips encrypted candidate documents without leaking plaintext fields
   assert.equal(decoded.provenance?.reference, 'session-1');
 });
 
+test('supports keyless candidate capture in local plaintext mode', () => {
+  delete process.env.BRAINFEATHER_DATA_ENCRYPTION;
+  delete process.env.BRAINFEATHER_DATA_ENCRYPTION_KEYS;
+  delete process.env.BRAINFEATHER_DATA_INDEX_KEY;
+
+  const encoded = encodeCandidateDocument('user-1', 'candidate-local', {
+    content: 'This project uses Vitest.',
+    category: 'code',
+    projectId: 'proj-1',
+    branch: 'feature/auth',
+  });
+
+  assert.equal(encoded.content, 'This project uses Vitest.');
+  assert.equal(encoded.projectId, 'proj-1');
+  assert.match(encoded.provenance ?? '', /feature\/auth/);
+});
+
 test('fits maximum validated scope and provenance in the candidate envelope', () => {
   const encoded = encodeCandidateDocument('user-1', 'candidate-max', {
     content: 'This project uses Vitest for unit tests.',

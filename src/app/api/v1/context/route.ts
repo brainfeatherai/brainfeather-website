@@ -44,6 +44,7 @@ async function getContext(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const includeEvidence = params.get('includeEvidence') === 'true';
+  const includeExplanations = params.get('includeExplanations') === 'true';
   const parsedScope = memoryScope({
     projectId: params.get('projectId'),
     branch: params.get('branch'),
@@ -118,6 +119,7 @@ async function getContext(request: Request) {
         query,
         maxTokens: maxTokens.value,
         asOfMs: referenceAtMs,
+        includeExplanations,
         includeEvidence,
       }),
       ...signedSession(sessionToken),

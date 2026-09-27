@@ -8,6 +8,43 @@ export type RankableMemory = {
   content: string;
 };
 
+/* Explanations read only confidence + provenance from the stored
+   metadata string — the same JSON memory-temporal writes, parsed
+   tolerantly so the ranker stays dependency-free and testable. */
+export type ExplainableMemory = RankableMemory & { metadata?: string };
+
+/* Stable public values. Consumers match on these strings; a reason may
+   be added in future releases but existing ones never change meaning. */
+export const RECALL_REASONS = [
+  'lexical',
+  'concept',
+  'entity',
+  'recent',
+  'evidence',
+  'user-confirmed',
+  'high-confidence',
+  'newest',
+] as const;
+
+export type RecallReason = (typeof RECALL_REASONS)[number];
+
+export type ExplanationProvenance = {
+  type: string;
+  reference?: string;
+};
+
+export type MemoryExplanation = {
+  reasons: RecallReason[];
+  matchedTerms: string[];
+  confidence: number;
+  provenance?: ExplanationProvenance;
+};
+
+export type RankedHit<T extends ExplainableMemory> = {
+  memory: T;
+  explanation: MemoryExplanation;
+};
+
 const K1 = 1.2;
 const B = 0.75;
 const TITLE_WEIGHT = 2;
@@ -15,6 +52,45 @@ const HALF_LIFE_MS = 90 * 24 * 60 * 60 * 1000;
 const CURRENT_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
 const TEMPORAL_QUERY = /\b(current|currently|latest|newest|recent|recently|now|today)\b/i;
 const TEMPORAL_TERMS = /\b(current|currently|latest|newest|recent|recently|now|today)\b/gi;
+
+/* Evidence is a bounded trust bonus, never a ranking driver. The cap of
+   0.03 stays under the 0.05 combined-score gap that separates clearly
+   different memories, so provenance can only break near-ties — strong
+   evidence can never promote an irrelevant fact over a relevant one. */
+const MAX_EVIDENCE_BONUS = 0.03;
+const HIGH_CONFIDENCE = 0.8;
+const DEFAULT_CONFIDENCE = 0.5;
+const RECENT_THRESHOLD = 0.5;
+
+/* Abstention floor: the share of a query's IDF mass that the candidate set
+   must collectively match before any result is returned.
+
+   Per-memory eligibility cannot decide this. A query like "native ios
+   deployment target" matches only "deployment" (IDF 1.48 of 10.75 total)
+   while its distinctive terms — native, ios, target — appear nowhere in a
+   backend corpus. Every individual memory still looks eligible, because one
+   generic term hit, or a concept score alone, is enough. Whether the corpus
+   knows the TOPIC is a property of the query against the whole candidate
+   set, so it is measured there.
+
+   Calibrated against the RepoMemBench and unit fixtures, not derived from
+   theory: across 13 true positives the weakest covers 0.234, and the false
+   positive covers 0.138. This sits between them, deliberately nearer the
+   false positive — a missed recall makes the agent ask the user again, which
+   is worse than one weak extra line, so the bias is toward answering. Treat
+   it as a fixture-fitted constant; widen the fixtures before trusting it as
+   a general threshold. */
+const MIN_KNOWN_QUERY_MASS = 0.18;
+
+const PROVENANCE_TYPES = new Set([
+  'user',
+  'agent',
+  'commit',
+  'pull_request',
+  'issue',
+  'file',
+  'deployment',
+]);
 
 function textOf(memory: RankableMemory): string {
   return `${memory.title ?? ''} ${memory.content}`;
@@ -56,6 +132,47 @@ function bm25Scores(tokenized: readonly string[][], queryTerms: readonly string[
   });
 }
 
+/* Share of the query's IDF mass this corpus can speak to at all.
+
+   Measured across the whole candidate set, not per memory: the question is
+   whether the corpus knows the query's TOPIC, which no single memory's score
+   can answer. The IDF formula mirrors bm25Scores so both agree on rarity.
+
+   A term counts as known when the corpus matches it literally OR matches one
+   of THAT TERM's own concept siblings. The per-term attribution is the whole
+   point: the flat expand().related list for "native ios deployment target"
+   contains vercel and production — siblings of "deployment" — so a flat
+   check would credit "native" for a match only "deployment" earned. That
+   conflation is what makes concept recall (auth -> rls, with no literal
+   overlap at all) indistinguishable from plain topic-ignorance. */
+function knownQueryEvidence(
+  tokenized: readonly string[][],
+  queryTerms: readonly string[],
+): { mass: number; termCount: number } {
+  if (!queryTerms.length || !tokenized.length) {
+    return { mass: 1, termCount: queryTerms.length };
+  }
+  const matchesAnywhere = (term: string) =>
+    tokenized.some((tokens) => tokens.some((token) => tokenMatches(token, term)));
+
+  let total = 0;
+  let known = 0;
+  let termCount = 0;
+  for (const term of queryTerms) {
+    const df = tokenized.reduce(
+      (count, tokens) => count + Number(tokens.some((token) => tokenMatches(token, term))),
+      0,
+    );
+    const idf = Math.log(1 + (tokenized.length - df + 0.5) / (df + 0.5));
+    total += idf;
+    if (df > 0 || expand(term).related.some(matchesAnywhere)) {
+      known += idf;
+      termCount++;
+    }
+  }
+  return { mass: total ? known / total : 1, termCount };
+}
+
 function exactCoverage(tokens: readonly string[], queryTerms: readonly string[]): number {
   if (!queryTerms.length) return 0;
   let matches = 0;
@@ -63,6 +180,24 @@ function exactCoverage(tokens: readonly string[], queryTerms: readonly string[])
     if (tokens.some((token) => tokenMatches(token, term))) matches++;
   }
   return matches / queryTerms.length;
+}
+
+/* One project-specific literal can carry a verbose query even when its IDF
+   share falls below the corpus-wide floor. Keep this escape hatch narrow:
+   the term must be a long exact token, occur in exactly one candidate, and
+   have no curated concept siblings. Generic vocabulary such as deployment
+   therefore cannot turn a topic-unknown query into a weak match. */
+function hasDistinctiveLiteral(
+  tokenized: readonly string[][],
+  queryTerms: readonly string[],
+): boolean {
+  return queryTerms.some((term) => {
+    if (term.length < 6 || expand(term).related.length > 0) return false;
+    return tokenized.reduce(
+      (count, tokens) => count + Number(tokens.includes(term)),
+      0,
+    ) === 1;
+  });
 }
 
 function entityKeys(text: string): Set<string> {
@@ -92,22 +227,88 @@ function newestFirst<T extends RankableMemory>(left: T, right: T): number {
   return timeDifference || left.$id.localeCompare(right.$id);
 }
 
-export function rankMemories<T extends RankableMemory>(
+type ScoredMemory<T extends RankableMemory> = {
+  memory: T;
+  lexical: number;
+  coverage: number;
+  concept: number;
+  entity: number;
+  recencyScore: number;
+  combined: number;
+  eligible: boolean;
+  matched: string[];
+};
+
+type ScoredSet<T extends RankableMemory> = {
+  fallbackNewest: boolean;
+  /* False when the corpus does not know enough of the query's distinctive
+     terms to answer it. Callers return nothing rather than a weak guess. */
+  topicKnown: boolean;
+  scored: ScoredMemory<T>[];
+};
+
+function matchedQueryTerms(
+  tokens: readonly string[],
+  queryTerms: readonly string[],
+): string[] {
+  const matched: string[] = [];
+  for (const term of queryTerms) {
+    if (tokens.some((token) => tokenMatches(token, term))) matched.push(term);
+  }
+  return matched;
+}
+
+/* Shared scoring core. Ordering and filtering stay with the callers so
+   rankMemories keeps its exact current behaviour and the explanation
+   variant can add the evidence bonus without touching this function. */
+function scoreMemories<T extends RankableMemory>(
   memories: readonly T[],
   query: string,
-  options: { limit: number; asOfMs?: number },
-): T[] {
-  const limit = Math.max(0, Math.floor(options.limit));
-  if (!limit || !memories.length) return [];
-
+  options: { asOfMs?: number },
+): ScoredSet<T> {
   const temporal = TEMPORAL_QUERY.test(query);
   const relevanceQuery = temporal ? query.replace(TEMPORAL_TERMS, ' ') : query;
   const expanded = expand(relevanceQuery);
   const queryEntities = entityKeys(relevanceQuery);
+  const asOfMs = options.asOfMs ?? Date.now();
+
   if (!expanded.exact.length && !queryEntities.size) {
-    return [...memories].sort(newestFirst).slice(0, limit);
+    const halfLifeMs = temporal ? CURRENT_HALF_LIFE_MS : HALF_LIFE_MS;
+    /* No query to be ignorant of: an empty or stopword-only query asks for
+       the newest facts, which is what get_context does with no query. */
+    return {
+      fallbackNewest: true,
+      topicKnown: true,
+      scored: [...memories]
+        .sort(newestFirst)
+        .map((memory) => ({
+          memory,
+          lexical: 0,
+          coverage: 0,
+          concept: 0,
+          entity: 0,
+          recencyScore: recency(memory.$createdAt, asOfMs, halfLifeMs),
+          combined: 0,
+          eligible: true,
+          matched: [],
+        })),
+    };
   }
 
+  const relevance = scoreRelevance(memories, expanded, queryEntities, { temporal, asOfMs });
+  return {
+    fallbackNewest: false,
+    topicKnown: relevance.topicKnown,
+    scored: relevance.scored,
+  };
+}
+
+function scoreRelevance<T extends RankableMemory>(
+  memories: readonly T[],
+  expanded: ReturnType<typeof expand>,
+  queryEntities: Set<string>,
+  context: { temporal: boolean; asOfMs: number },
+): { scored: ScoredMemory<T>[]; topicKnown: boolean } {
   const texts = memories.map(textOf);
   const titleTokens = memories.map((memory) => searchTokens(memory.title ?? ''));
   const contentTokens = memories.map((memory) =>
@@ -120,34 +321,68 @@ export function rankMemories<T extends RankableMemory>(
     (titleScore, index) => titleScore * TITLE_WEIGHT + contentBm25[index],
   );
   const maxBm25 = Math.max(...bm25, 0);
-  const asOfMs = options.asOfMs ?? Date.now();
-  const weights = temporal
+  const weights = context.temporal
     ? { lexical: 0.25, coverage: 0.25, concept: 0.05, entity: 0.1, recency: 0.35 }
     : { lexical: 0.55, coverage: 0.05, concept: 0.2, entity: 0.15, recency: 0.05 };
-  const halfLifeMs = temporal ? CURRENT_HALF_LIFE_MS : HALF_LIFE_MS;
+  const halfLifeMs = context.temporal ? CURRENT_HALF_LIFE_MS : HALF_LIFE_MS;
 
-  return memories
-    .map((memory, index) => {
-      const lexical = maxBm25 ? bm25[index] / maxBm25 : 0;
-      const coverage = exactCoverage(tokenized[index], expanded.exact);
-      const concept = conceptRelatedScore(texts[index], expanded);
-      const entity = entityOverlap(queryEntities, texts[index]);
-      const eligible = bm25[index] > 0 || concept > 0 || entity > 0;
-      return {
-        memory,
-        lexical,
-        coverage,
-        concept,
-        entity,
-        eligible,
-        combined:
-          lexical * weights.lexical +
-          coverage * weights.coverage +
-          concept * weights.concept +
-          entity * weights.entity +
-          recency(memory.$createdAt, asOfMs, halfLifeMs) * weights.recency,
-      };
-    })
+  const scored = memories.map((memory, index) => {
+    const lexical = maxBm25 ? bm25[index] / maxBm25 : 0;
+    const coverage = exactCoverage(tokenized[index], expanded.exact);
+    const concept = conceptRelatedScore(texts[index], expanded);
+    const entity = entityOverlap(queryEntities, texts[index]);
+    const recencyScore = recency(memory.$createdAt, context.asOfMs, halfLifeMs);
+    const eligible = bm25[index] > 0 || concept > 0 || entity > 0;
+    return {
+      memory,
+      lexical,
+      coverage,
+      concept,
+      entity,
+      recencyScore,
+      eligible,
+      matched: matchedQueryTerms(tokenized[index], expanded.exact),
+      combined:
+        lexical * weights.lexical +
+        coverage * weights.coverage +
+        concept * weights.concept +
+        entity * weights.entity +
+        recencyScore * weights.recency,
+    };
+  });
+
+  /* Reuses `tokenized` rather than tokenizing again — p95 latency is a
+     protected metric, so this check must stay off the hot path's budget.
+     IDF mass alone is unstable on tiny corpora: one generic known term can
+     exceed the floor while most of the query is unknown. Require support
+     for at least one-third of meaningful terms, unless a unique literal or
+     recognized entity carries the topic on its own. */
+  const known = knownQueryEvidence(tokenized, expanded.exact);
+  const knownTermShare = known.termCount / expanded.exact.length;
+  const topicKnown =
+    (known.mass >= MIN_KNOWN_QUERY_MASS && knownTermShare >= 1 / 3) ||
+    hasDistinctiveLiteral(tokenized, expanded.exact) ||
+    scored.some(({ entity }) => entity > 0);
+
+  return { scored, topicKnown };
+}
+
+export function rankMemories<T extends RankableMemory>(
+  memories: readonly T[],
+  query: string,
+  options: { limit: number; asOfMs?: number },
+): T[] {
+  const limit = Math.max(0, Math.floor(options.limit));
+  if (!limit || !memories.length) return [];
+
+  const { fallbackNewest, topicKnown, scored } = scoreMemories(memories, query, {
+    asOfMs: options.asOfMs,
+  });
+  if (fallbackNewest) return scored.slice(0, limit).map(({ memory }) => memory);
+  /* Abstain rather than answer a question this corpus cannot support. */
+  if (!topicKnown) return [];
+
+  return scored
     .filter(({ eligible }) => eligible)
     .sort(
       (left, right) =>
@@ -159,4 +394,119 @@ export function rankMemories<T extends RankableMemory>(
     )
     .slice(0, limit)
     .map(({ memory }) => memory);
+}
+
+function trustOf(provenance: ExplanationProvenance | undefined): number {
+  if (!provenance || provenance.type === 'agent') return 0;
+  return provenance.type === 'user' ? 1 : 0.5;
+}
+
+function explanationInputs(memory: ExplainableMemory): {
+  confidence: number;
+  provenance?: ExplanationProvenance;
+} {
+  let confidence = DEFAULT_CONFIDENCE;
+  let provenance: ExplanationProvenance | undefined;
+  try {
+    const parsed: unknown = JSON.parse(memory.metadata ?? '{}');
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      const raw = parsed as Record<string, unknown>;
+      const rawConfidence = raw.confidence ?? raw.c;
+      if (typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)) {
+        confidence = Math.min(1, Math.max(0, rawConfidence));
+      }
+      const rawProvenance = raw.provenance ?? raw.p;
+      if (
+        typeof rawProvenance === 'object' &&
+        rawProvenance !== null &&
+        !Array.isArray(rawProvenance)
+      ) {
+        const candidate = rawProvenance as Record<string, unknown>;
+        let type: unknown = candidate.type ?? candidate.t;
+        if (type === 'user_stated') type = 'user';
+        if (typeof type === 'string' && PROVENANCE_TYPES.has(type)) {
+          const reference = candidate.reference ?? candidate.r;
+          provenance = {
+            type,
+            ...(typeof reference === 'string' && reference ? { reference } : {}),
+          };
+        }
+      }
+    }
+  } catch {
+    /* Malformed metadata keeps defaults; ranking never fails on it. */
+  }
+  return { confidence, provenance };
+}
+
+function buildExplanation(
+  scored: Pick<
+    ScoredMemory<ExplainableMemory>,
+    'lexical' | 'coverage' | 'concept' | 'entity' | 'recencyScore' | 'matched'
+  >,
+  inputs: { confidence: number; provenance?: ExplanationProvenance },
+  context: { fallbackNewest: boolean },
+): MemoryExplanation {
+  const reasons = new Set<RecallReason>();
+  if (scored.matched.length) reasons.add('lexical');
+  if (scored.concept > 0) reasons.add('concept');
+  if (scored.entity > 0) reasons.add('entity');
+  if (!context.fallbackNewest && scored.recencyScore >= RECENT_THRESHOLD) reasons.add('recent');
+  if (context.fallbackNewest) reasons.add('newest');
+  if (inputs.provenance && inputs.provenance.type !== 'agent') {
+    reasons.add('evidence');
+    if (inputs.provenance.type === 'user') reasons.add('user-confirmed');
+  }
+  if (inputs.confidence >= HIGH_CONFIDENCE) reasons.add('high-confidence');
+
+  return {
+    reasons: [...RECALL_REASONS].filter((reason) => reasons.has(reason)),
+    matchedTerms: [...scored.matched],
+    confidence: inputs.confidence,
+    ...(inputs.provenance ? { provenance: inputs.provenance } : {}),
+  };
+}
+
+/* Ranking with per-memory recall explanations. Order matches rankMemories
+   except for the bounded evidence trust bonus on near-ties (see
+   MAX_EVIDENCE_BONUS). Explanations name WHY a memory was recalled —
+   never its raw weights, which stay internal. */
+export function rankMemoriesWithExplanations<T extends ExplainableMemory>(
+  memories: readonly T[],
+  query: string,
+  options: { limit: number; asOfMs?: number },
+): RankedHit<T>[] {
+  const limit = Math.max(0, Math.floor(options.limit));
+  if (!limit || !memories.length) return [];
+
+  const { fallbackNewest, topicKnown, scored } = scoreMemories(memories, query, {
+    asOfMs: options.asOfMs,
+  });
+  if (!fallbackNewest && !topicKnown) return [];
+  const inputs = scored.map(({ memory }) => explanationInputs(memory));
+
+  if (fallbackNewest) {
+    return scored.slice(0, limit).map((entry, index) => ({
+      memory: entry.memory,
+      explanation: buildExplanation(entry, inputs[index], { fallbackNewest: true }),
+    }));
+  }
+
+  return scored
+    .map((entry, index) => ({ ...entry, index, trust: trustOf(inputs[index].provenance) }))
+    .filter(({ eligible }) => eligible)
+    .sort(
+      (left, right) =>
+        right.combined + right.trust * MAX_EVIDENCE_BONUS -
+          (left.combined + left.trust * MAX_EVIDENCE_BONUS) ||
+        right.coverage - left.coverage ||
+        right.lexical - left.lexical ||
+        right.entity - left.entity ||
+        newestFirst(left.memory, right.memory),
+    )
+    .slice(0, limit)
+    .map((entry) => ({
+      memory: entry.memory,
+      explanation: buildExplanation(entry, inputs[entry.index], { fallbackNewest: false }),
+    }));
 }

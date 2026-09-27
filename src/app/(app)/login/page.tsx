@@ -45,7 +45,9 @@ export default async function LoginPage({
       ? 'This Google account has not been approved for Brainfeather access.'
       : error === 'oauth'
         ? 'Google sign-in could not be completed. Try again.'
-        : null;
+        : error === 'unavailable'
+          ? 'Console access is temporarily unavailable. Try again in a moment.'
+          : null;
   return (
     <LoginView
       inviteId={approved?.$id ?? null}

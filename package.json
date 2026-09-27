@@ -23,7 +23,8 @@
     "schema:migrate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --env-file=.env.local scripts/migrate-appwrite-schema.ts",
     "schema:verify": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --env-file=.env.local scripts/verify-appwrite-schema.ts",
     "eval:retrieval": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-retrieval.ts",
-    "bench:repo-memory": "node --conditions=react-server --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/repomembench.ts"
+    "bench:repo-memory": "node --conditions=react-server --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/repomembench.ts",
+    "mcp:server-card": "node --conditions=react-server --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/generate-server-card.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

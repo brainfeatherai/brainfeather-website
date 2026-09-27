@@ -54,6 +54,7 @@ HTTP MCP is at https://brainfeather.com/mcp.
 ## Pages
 
 - [Home](${SITE_URL}/): what it is and how it works.
+- [AI agent memory](${SITE_URL}/ai-agent-memory): what agent memory is, why a context window is not memory, and the MCP tools Brainfeather exposes.
 - [Request access](${SITE_URL}/#waitlist): join the invite-only waitlist.
 - [Contact](${SITE_URL}/contact): support, security reports, press.
 - [Privacy Policy](${SITE_URL}/privacy): what is collected and stored, and for how long.

@@ -55,6 +55,7 @@ const COLUMNS = [
     links: [
       { label: "How it works", href: "/#how" },
       { label: "Integrations", href: "/#integrations" },
+      { label: "AI agent memory", href: "/ai-agent-memory" },
     ],
   },
   {

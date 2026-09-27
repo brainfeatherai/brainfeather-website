@@ -254,37 +254,3 @@ export function extractEntities(content: string): { name: string; type: EntityTy
 
   return [...found].map(([name, type]) => ({ name, type }));
 }
-
-/* ────────────────────────────────────────────────────────────────
-   Surprise weighting.
-
-   From HiMem (arxiv:2601.06377): a fact that conflicts with what is
-   already known carries more information than one restating it, and is
-   worth storing more eagerly.
-
-   Used to modulate the junk threshold — a borderline line that
-   contradicts an existing fact is kept, where the same line in
-   isolation would be dropped. A correction is the case that matters:
-   "actually no, Postgres" is short and low-signal on its own, and is
-   the single most important thing to record.
-   ──────────────────────────────────────────────────────────────── */
-
-export function surpriseScore(content: string, existing: string[]): number {
-  if (!existing.length) return 0.5;
-
-  const t = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
-  const incoming = t(content);
-
-  let peak = 0;
-  for (const prior of existing) {
-    const other = t(prior);
-    let shared = 0;
-    for (const w of incoming) if (other.has(w)) shared++;
-    const overlap = shared / (incoming.size + other.size - shared || 1);
-    /* Peak overlap in the 0.4-0.85 band is the interesting signal: same
-       subject, different claim. Identical text is a duplicate and is
-       caught earlier; unrelated text is simply new. */
-    if (overlap > 0.4 && overlap < 0.85) peak = Math.max(peak, overlap);
-  }
-  return peak;
-}

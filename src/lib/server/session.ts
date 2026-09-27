@@ -14,12 +14,13 @@ export type AgentSession = {
   lastActivityAt: string;
 };
 
+/* One secret, one purpose. This used to fall back to
+   BRAINFEATHER_DATA_INDEX_KEY, which meant rotating the blind-index key
+   silently invalidated every active session, and one leaked secret
+   covered both signing and indexing. production-config.ts now requires
+   this variable independently, so the fallback bought nothing. */
 function sessionSecret(): string {
-  return (
-    process.env.BRAINFEATHER_SESSION_SECRET ||
-    process.env.BRAINFEATHER_DATA_INDEX_KEY ||
-    ''
-  );
+  return process.env.BRAINFEATHER_SESSION_SECRET || '';
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;

@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import baselineArtifact from '../../../benchmarks/baselines/brainfeather-1.5.2.json' with { type: 'json' };
 import capabilityArtifact from '../../../benchmarks/baselines/branch-task-memory.json' with { type: 'json' };
+import abstentionArtifact from '../../../benchmarks/baselines/negative-query-abstention.json' with { type: 'json' };
 import { compileContext, estimateTokens } from '../server/context-compiler.ts';
 import {
   memoryEvidence,
@@ -15,7 +16,7 @@ import {
   type StoredFact,
 } from '../server/memory-policy.ts';
 
-export const REPOMEMBENCH_VERSION = '0.2.0';
+export const REPOMEMBENCH_VERSION = '0.3.0';
 export const BASELINE_RELEASE = 'brainfeather-1.5.2';
 const NOW = Date.parse('2026-08-30T00:00:00.000Z');
 const DAY = 86_400_000;
@@ -503,7 +504,12 @@ export function runRepoMemBench(options: { iterations?: number } = {}): RepoMemB
       negativeQueryAbstention: {
         measuredAccuracy: retrieval.abstentionAccuracy,
         target: '100%',
-        note: 'The current ranker can over-match generic terms such as policy. Phase 1 adds calibrated confidence thresholds.',
+        /* The old note blamed "generic terms such as policy", but the
+           billing-invoice-policy query always abstained correctly. The single
+           failure was `native ios deployment target`, which matched only the
+           generic term "deployment" while native/ios/target were absent from
+           the corpus. Closed by the abstention floor in retrieval-ranking. */
+        note: 'Closed in 0.3.0. Ranking abstains when the candidate set matches too little of the query IDF mass, so a lone generic-term hit no longer answers an unknown topic.',
       },
     },
     capabilities: {
@@ -547,13 +553,17 @@ export function baselinePasses(report: RepoMemBenchReport): boolean {
   );
 
   return (
-    report.benchmark === capabilityArtifact.benchmark &&
-    report.baseline === capabilityArtifact.baseline &&
+    report.benchmark === abstentionArtifact.benchmark &&
+    report.baseline === abstentionArtifact.baseline &&
     capabilityArtifact.extends === 'brainfeather-1.5.2.json' &&
+    abstentionArtifact.extends === 'branch-task-memory.json' &&
     protectedPass &&
     report.latencyMs.p95 < baselineArtifact.protected['latencyMs.p95UpperBound'] &&
-    report.retrieval.abstentionAccuracy >=
-      baselineArtifact.targets['retrieval.abstentionAccuracy'].baseline &&
+    /* Was `>= targets[...].baseline`, i.e. >= 0.667, so this metric could
+       fall back to the old ranker behaviour and still exit 0. Now pinned to
+       the promoted target: abstention regressions fail the run. */
+    report.retrieval.abstentionAccuracy ===
+      abstentionArtifact.protected['retrieval.abstentionAccuracy'] &&
     report.capabilities.branchIsolation.measuredLeakageRate ===
       capabilityArtifact.protected['branchIsolation.leakageRate'] &&
     report.capabilities.branchIsolation.rankingAccuracy ===

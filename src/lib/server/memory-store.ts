@@ -16,7 +16,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { ID, Query } from 'node-appwrite';
 import { adminDb, DATABASE_ID, COLLECTIONS } from './appwrite-admin.ts';
-import { rankMemories } from './retrieval-ranking.ts';
+import { rankMemoriesWithExplanations, type MemoryExplanation } from './retrieval-ranking.ts';
 import {
   invalidateMemoryMetadata,
   mergeMemoryMetadata,
@@ -38,6 +38,10 @@ import {
   lookupValues,
   needsDataEncryption,
 } from './data-encryption.ts';
+
+/* A search result carries its recall explanation beside the record, so
+   callers can show WHY a fact was surfaced without re-ranking it. */
+export type SearchHit = MemoryDoc & { explanation: MemoryExplanation };
 
 type CollectionId = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
@@ -240,7 +244,7 @@ function storedMemoryMetadata(
   return encryptStoredValue(
     value,
     memoryContext(userId, documentId, 'metadata'),
-    true,
+    { forceEncryption: true },
   );
 }
 
@@ -548,14 +552,17 @@ export async function searchWithMeta(
     taskId?: string;
     referenceAtMs?: number;
   } = {},
-): Promise<{ memories: MemoryDoc[]; truncated: boolean; scanned: number }> {
+): Promise<{ memories: SearchHit[]; truncated: boolean; scanned: number }> {
   const limit = opts.limit ?? 10;
   const pool = await listActive(userId, { ...opts, limit: 501 });
   const truncated = pool.length > 500;
   const candidates = truncated ? pool.slice(0, 500) : pool;
 
   return {
-    memories: rankMemories(candidates, query, { limit, asOfMs: opts.referenceAtMs }),
+    memories: rankMemoriesWithExplanations(candidates, query, {
+      limit,
+      asOfMs: opts.referenceAtMs,
+    }).map(({ memory, explanation }) => ({ ...memory, explanation })),
     truncated,
     scanned: candidates.length,
   };
@@ -873,7 +880,7 @@ export async function updateMemory(
               ? encryptStoredValue(
                   data.content,
                   memoryContext(userId, id, 'content'),
-                  true,
+                  { forceEncryption: true },
                 )
               : data.content,
         }
@@ -1047,14 +1054,14 @@ export async function upsertEntity(
               metadata: encryptStoredValue(
                 JSON.stringify({ version: 1, name } satisfies StoredEntityMetadata),
                 entityContext(userId, found.$id, 'metadata'),
-                true,
+                { forceEncryption: true },
               ),
               ...(summary || current.summary
                 ? {
                     summary: encryptStoredValue(
                       summary ?? current.summary!,
                       entityContext(userId, found.$id, 'summary'),
-                      true,
+                      { forceEncryption: true },
                     ),
                   }
                 : {}),

@@ -8,7 +8,7 @@ import {
   storedApiKey,
 } from '@/lib/api-key';
 import { adminDb, adminUsers, DATABASE_ID, COLLECTIONS } from './appwrite-admin';
-import { hasProfile, isApprovedEmail } from './access-control';
+import { accessAllowed } from './access-control';
 
 export type AuthResult =
   | {
@@ -121,7 +121,7 @@ async function authenticateJwt(token: string): Promise<AuthResult> {
   }
 
   try {
-    const approved = (await hasProfile(user.$id)) || (await isApprovedEmail(user.email));
+    const approved = await accessAllowed(user.$id, user.email);
     if (!approved) {
       return {
         ok: false,

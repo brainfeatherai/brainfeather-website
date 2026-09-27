@@ -4,7 +4,8 @@ import { baselinePasses, runRepoMemBench } from './repomembench.ts';
 
 test('preserves the Brainfeather 1.5.2 baseline in RepoMemBench v0.2', () => {
   const report = runRepoMemBench({ iterations: 5 });
-  assert.equal(report.benchmark, '0.2.0');
+  assert.equal(report.benchmark, '0.3.0');
+  assert.equal(report.retrieval.abstentionAccuracy, 1);
   assert.equal(report.baseline, 'brainfeather-1.5.2');
   assert.equal(report.retrieval.staleRecallRate, 0);
   assert.equal(report.retrieval.crossProjectLeakageRate, 0);

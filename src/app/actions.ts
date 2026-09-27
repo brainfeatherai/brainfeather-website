@@ -1,5 +1,6 @@
 "use server";
 
+import { clientAddress } from "@/lib/server/client-address";
 import { reportServerError } from "@/lib/server/report-error";
 import { normalizeWaitlistEmail } from "@/lib/waitlist-email-address";
 import { cookies, headers } from "next/headers";
@@ -62,11 +63,7 @@ export async function joinWaitlist(
   }
 
   try {
-    const requestHeaders = await headers();
-    const address =
-      requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      requestHeaders.get('x-real-ip') ||
-      'unknown';
+    const address = clientAddress(await headers());
     const { consumePublicRateLimit } = await import('@/lib/server/public-rate-limit');
     if (!(await consumePublicRateLimit('waitlist', address))) {
       return { status: 'error', message: 'Too many attempts. Try again later.' };

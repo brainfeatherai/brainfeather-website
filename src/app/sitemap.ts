@@ -19,7 +19,7 @@ import { SITE_URL as SITE } from "@/lib/site";
    disregards; kept because other crawlers still read them and they cost
    nothing. `lastModified` is the field that actually earns a recrawl, so
    it's the one worth keeping honest. */
-const SITE_CHANGED = new Date("2026-08-29"); // client → MCP → dashboard, hosted /mcp
+const SITE_CHANGED = new Date("2026-09-23"); // evidence ranking, access revocation
 const LEGAL_CHANGED = new Date("2026-08-08"); // matches the pages' own "Last updated"
 
 export default function sitemap(): MetadataRoute.Sitemap {

@@ -8,11 +8,40 @@
   --mint: #9fd8b8;
   --paper: #fbf9ef;
   --paper-dim: #f2eee0;
-  --font-outfit: "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* --font-outfit and --font-geist-mono are defined by next/font in
+     layout.tsx, which self-hosts the real faces and appends a
+     size-adjusted local fallback to each stack. They are deliberately
+     NOT redeclared here: hardcoding a family list meant the named
+     fonts were never actually fetched, so the site silently rendered
+     in Avenir Next or Segoe UI depending on the visitor's OS. */
 
   --background: var(--paper);
   --foreground: var(--forest);
+
+  /* ── Text emphasis scale ──────────────────────────────────────
+     Four tiers, each solved for a WCAG contrast floor rather than
+     picked by eye, and measured against --paper-dim (the card
+     surface) because that is the worse of the two light backgrounds.
+
+       strong  10:1  headings, primary copy
+       body     7:1  default running text
+       muted  4.5:1  secondary text — the AA floor for body sizes
+       faint    3:1  large or decorative text ONLY, never body copy
+
+     These replaced ad-hoc `text-forest/NN` opacities. That pattern
+     put 22 different alpha values in the codebase, most of them
+     failing AA: `text-forest/45` (the single most used, 48 times)
+     computed to 2.58:1 on paper, and `/35` to 2.03:1.
+
+     Opacity is the wrong tool here anyway, because --forest is
+     redefined inside .workspace-theme — so one class silently meant
+     two different colours in the two themes. Each tier below is an
+     explicit colour, overridden for the dark workspace. */
+  --ink-strong: #203e35;
+  --ink-body: #3b554b;
+  --ink-muted: #5c7066;
+  --ink-faint: #7d8c81;
 }
 
 @theme inline {
@@ -24,6 +53,10 @@
   --color-mint: var(--mint);
   --color-paper: var(--paper);
   --color-paper-dim: var(--paper-dim);
+  --color-ink-strong: var(--ink-strong);
+  --color-ink-body: var(--ink-body);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
   --font-sans: var(--font-outfit);
   --font-mono: var(--font-geist-mono);
 }
@@ -60,6 +93,15 @@ body {
   --paper-dim: #1a1a1a;
   --background: #090909;
   --foreground: #f1f1f1;
+
+  /* Same four tiers, re-solved for this theme against --paper-dim
+     (#1a1a1a), the lightest dark surface and therefore the worst case.
+     Light-on-dark needs its own values: reusing the light tiers here
+     is exactly the bug the old `text-forest/NN` opacities had. */
+  --ink-strong: #c5c5c5;
+  --ink-body: #a5a5a5;
+  --ink-muted: #828282;
+  --ink-faint: #666666;
 
   min-height: 100dvh;
   color-scheme: dark;

@@ -6,7 +6,6 @@ import { adminDb, COLLECTIONS, DATABASE_ID } from './appwrite-admin.ts';
 import {
   decryptStoredValue,
   encryptStoredValue,
-  encryptedDataReadable,
 } from './data-encryption.ts';
 import type { Candidate, Decision } from './think.ts';
 
@@ -64,12 +63,7 @@ function encryptedField(
   field: string,
 ): string | undefined {
   if (!value) return undefined;
-  if (!encryptedDataReadable()) {
-    throw new Error(
-      '[brainfeather] Candidate review requires compatibility or encrypted data mode.',
-    );
-  }
-  return encryptStoredValue(value, fieldContext(userId, documentId, field), true);
+  return encryptStoredValue(value, fieldContext(userId, documentId, field));
 }
 
 export function candidateDocumentId(

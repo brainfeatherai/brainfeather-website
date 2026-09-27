@@ -35,8 +35,38 @@ test('accepts explicit encrypted production configuration', () => {
       BRAINFEATHER_API_KEY_STORAGE: 'hashed',
       BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
       BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+      WAITLIST_APPROVAL_SECRET: 'approval-secret-with-at-least-32-characters',
     }),
   );
+});
+
+/* This function runs at boot from instrumentation.ts, so a missing
+   approval secret must warn and not throw — throwing would take the site
+   down over a hardening that has not been provisioned yet. Asserting
+   "warns AND does not throw" is the point: the weaker assertion
+   (doesNotThrow alone) would still pass if the warning were dropped and
+   the gap became silent. */
+test('warns but keeps booting when the waitlist approval secret is missing', () => {
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args.join(' '));
+  try {
+    assert.doesNotThrow(() =>
+      validateProductionConfiguration({
+        NODE_ENV: 'production',
+        BRAINFEATHER_DATA_ENCRYPTION: 'encrypted',
+        BRAINFEATHER_DATA_ENCRYPTION_KEYS: `v1:${key}`,
+        BRAINFEATHER_DATA_INDEX_KEY: key,
+        BRAINFEATHER_API_KEY_STORAGE: 'hashed',
+        BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
+        BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+      }),
+    );
+  } finally {
+    console.warn = original;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /WAITLIST_APPROVAL_SECRET/);
 });
 
 test('rejects duplicate or invalid encryption key ids at startup', () => {
@@ -46,6 +76,7 @@ test('rejects duplicate or invalid encryption key ids at startup', () => {
     BRAINFEATHER_API_KEY_STORAGE: 'hashed',
     BRAINFEATHER_SESSION_SECRET: 'session-secret-with-at-least-32-characters',
     BRAINFEATHER_RATE_LIMIT_SECRET: 'rate-limit-secret-with-at-least-32-characters',
+    WAITLIST_APPROVAL_SECRET: 'approval-secret-with-at-least-32-characters',
   };
   assert.throws(() => validateProductionConfiguration({
     ...base,

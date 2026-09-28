@@ -69,3 +69,13 @@ export function apiKeySlotId(userId: string, slot: number): string {
     .digest('hex')
     .slice(0, 36);
 }
+
+/* "Last used" is displayed at day granularity; refreshing it at most every
+   ten minutes keeps it accurate without a write on every API call. */
+export const LAST_USED_REFRESH_MS = 10 * 60 * 1000;
+
+export function lastUsedIsStale(lastUsedAt: unknown, nowMs = Date.now()): boolean {
+  if (typeof lastUsedAt !== "string") return true;
+  const at = Date.parse(lastUsedAt);
+  return !Number.isFinite(at) || at > nowMs || nowMs - at >= LAST_USED_REFRESH_MS;
+}

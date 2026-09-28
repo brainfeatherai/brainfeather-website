@@ -73,3 +73,14 @@ test('defaults production API-key writes to hashed storage', () => {
   delete process.env.BRAINFEATHER_API_KEY_STORAGE;
   assert.equal(apiKeyHashWritesEnabled(), true);
 });
+
+test('last-used timestamps refresh at most every ten minutes', async () => {
+  const { lastUsedIsStale, LAST_USED_REFRESH_MS } = await import('./api-key.ts');
+  const now = Date.parse('2026-09-28T12:00:00.000Z');
+  assert.equal(lastUsedIsStale(undefined, now), true);
+  assert.equal(lastUsedIsStale('not a date', now), true);
+  assert.equal(lastUsedIsStale(new Date(now - 60_000).toISOString(), now), false);
+  assert.equal(lastUsedIsStale(new Date(now - LAST_USED_REFRESH_MS).toISOString(), now), true);
+  /* A clock-skewed future value must not suppress refreshes forever. */
+  assert.equal(lastUsedIsStale(new Date(now + 86_400_000).toISOString(), now), true);
+});

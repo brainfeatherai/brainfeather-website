@@ -4,6 +4,7 @@ import { Account, Client, Query } from 'node-appwrite';
 import {
   apiKeyHashWritesEnabled,
   isBrainfeatherApiKey,
+  lastUsedIsStale,
   legacyStoredApiKey,
   storedApiKey,
 } from '@/lib/api-key';
@@ -25,6 +26,7 @@ export type AuthResult =
    it by Request object so wrapping a route never repeats token hashing,
    database lookup, or Appwrite JWT verification. */
 const authCache = new WeakMap<Request, Promise<AuthResult>>();
+
 
 async function authenticateApiKey(token: string): Promise<AuthResult> {
   const hashed = storedApiKey(token);
@@ -88,10 +90,14 @@ async function authenticateApiKey(token: string): Promise<AuthResult> {
       : { ok: false, status: 503, error: 'Token verification is temporarily unavailable.' };
   }
 
-  await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.apiKeys, row.$id, {
-      lastUsedAt: new Date().toISOString(),
-    })
-    .catch(() => {});
+  /* "Last used" is shown at day granularity, so writing it on every call
+     only adds a round trip to each MCP request. Refresh it when stale. */
+  if (lastUsedIsStale(row.lastUsedAt)) {
+    await adminDb.updateDocument(DATABASE_ID, COLLECTIONS.apiKeys, row.$id, {
+        lastUsedAt: new Date().toISOString(),
+      })
+      .catch(() => {});
+  }
 
   return {
     ok: true,

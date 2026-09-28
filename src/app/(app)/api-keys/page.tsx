@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import { useApiSession, type ApiKeyRow } from "@/lib/api-client";
@@ -43,6 +43,9 @@ function ApiKeysView() {
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
+  const copyTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
   useEffect(() => {
     if (!token) return;
@@ -89,10 +92,19 @@ function ApiKeysView() {
     }
   }
 
+  /* Clipboard access can be denied (permissions, insecure context), so
+     say so instead of failing silently; the secret stays on screen. */
   async function copy(id: string, value: string) {
-    await navigator.clipboard.writeText(value);
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      setError("Could not copy to the clipboard. Select the text and copy it manually.");
+      return;
+    }
+    setError(null);
     setCopied(id);
-    window.setTimeout(() => setCopied(null), 1800);
+    window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopied(null), 1800);
   }
 
   return (

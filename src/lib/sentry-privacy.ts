@@ -64,6 +64,25 @@ export function sanitizeSentrySpan(span: SpanPayload): SpanPayload {
   };
 }
 
+/* Frames from our own bundle. Anything else (an extension, an automation
+   harness, an injected script) is not code we can fix. */
+const OWN_FRAME = /\/_next\/|webpack-internal:|turbopack|\/src\//;
+
+/* True when an exception has a stack and none of its frames are ours.
+   Events without frames are kept: they may still be our errors. */
+export function isForeignException(event: Event): boolean {
+  const frames = (event.exception?.values ?? []).flatMap(
+    (value) => value.stacktrace?.frames ?? [],
+  );
+  if (!frames.length) return false;
+  return frames.every((frame) => !OWN_FRAME.test(frame.filename ?? frame.abs_path ?? ""));
+}
+
+/* Browser beforeSend: drop foreign noise, then sanitize. */
+export function filterBrowserEvent<T extends Event>(event: T): T | null {
+  return isForeignException(event) ? null : sanitizeSentryEvent(event);
+}
+
 export function sanitizeSentryEvent<T extends Event>(event: T): T {
   delete event.user;
   delete event.request;
@@ -90,7 +109,17 @@ export function sanitizeSentryEvent<T extends Event>(event: T): T {
     );
   }
 
+  /* Browser and OS family only, so browser-specific failures can be
+     triaged. No device, geography, or user detail is kept. */
+  const browser = event.contexts?.browser;
+  const os = event.contexts?.os;
   delete event.contexts;
+  if (browser || os) {
+    event.contexts = {
+      ...(browser ? { browser: { name: browser.name, version: browser.version } } : {}),
+      ...(os ? { os: { name: os.name } } : {}),
+    };
+  }
   if (event.spans) event.spans = event.spans.map(sanitizeSentrySpan);
 
   return event;

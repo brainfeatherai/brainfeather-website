@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import {
   SENTRY_DATA_COLLECTION,
-  sanitizeSentryEvent,
+  filterBrowserEvent,
   sanitizeSentrySpan,
   sanitizeSentryTransaction,
 } from "@/lib/sentry-privacy";
@@ -17,7 +17,7 @@ Sentry.init({
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? "development",
   release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
   dataCollection: SENTRY_DATA_COLLECTION,
-  beforeSend: sanitizeSentryEvent,
+  beforeSend: filterBrowserEvent,
   beforeSendTransaction: sanitizeSentryTransaction,
   beforeSendSpan: sanitizeSentrySpan,
 

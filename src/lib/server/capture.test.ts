@@ -2,7 +2,13 @@ import './test-env.ts';
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { categoryForType, extractActivityFacts } from './capture.ts';
+import {
+  alreadyKnown,
+  captureConfidence,
+  captureRejectReason,
+  categoryForType,
+  extractActivityFacts,
+} from './capture.ts';
 import { detectMemoryType } from './memory-policy.ts';
 
 test('extracts durable facts from agent activity and drops chatter', () => {
@@ -47,4 +53,34 @@ test('requires a durable signal instead of capturing arbitrary agent claims', ()
     ).map((fact) => fact.content),
     ['This project uses pnpm for package management.'],
   );
+});
+
+test('explains why narration, hedges, and fragments are not captured', () => {
+  assert.equal(captureRejectReason('It uses Redis for caching.'), 'depends on earlier context (unresolved reference)');
+  assert.equal(captureRejectReason('Maybe we should use Postgres.'), 'speculative, not settled');
+  assert.equal(captureRejectReason('I added a test for the auth route.'), 'narrates this session, not a durable fact');
+  assert.equal(captureRejectReason('We will migrate the database next week.'), 'a plan, not a settled fact');
+  assert.equal(captureRejectReason('Never deploy on Fridays because rollbacks might be slow.'), null);
+  assert.equal(captureRejectReason('This project uses pnpm.'), null);
+});
+
+test('ranks rules and decisions above plain facts, within bounds', () => {
+  const rule = captureConfidence('Never run database migrations against production from a laptop.');
+  const plain = captureConfidence('Our staging environment runs on Fly.io.');
+  assert.ok(rule > plain);
+  for (const value of [rule, plain]) assert.ok(value >= 0.3 && value <= 0.95);
+});
+
+test('caps one capture at eight candidates, keeping the strongest', () => {
+  const lines = Array.from({ length: 12 }, (_, index) => `This project uses tool${index} for builds.`);
+  lines.push('We decided to never commit directly to main.');
+  const facts = extractActivityFacts(lines.join('\n'));
+  assert.equal(facts.length, 8);
+  assert.ok(facts.some((fact) => fact.content.startsWith('We decided')));
+});
+
+test('skips restatements but lets corrections reach review', () => {
+  const known = [{ $id: 'm1', content: 'The backend is deployed on Vercel.' }];
+  assert.equal(alreadyKnown('The backend is deployed on Vercel', known), true);
+  assert.equal(alreadyKnown('The backend is deployed on Fly.io.', known), false);
 });

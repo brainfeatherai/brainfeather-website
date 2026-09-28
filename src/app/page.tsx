@@ -106,11 +106,11 @@ export default function Home() {
 
       {/* ══════════════ CREAM SHEET ══════════════ */}
       <div className="relative z-20 mx-auto -mt-32 w-full max-w-[1240px] px-4 pb-24">
-        <div className="relative bg-paper px-6 pb-28 pt-14 sm:px-12">
+        <div className="relative bg-paper px-6 pb-28 pt-10 sm:px-12">
           <CornerTicks />
 
           {/* ── DIAGRAM ── */}
-          <div id="how" className="rule-t rule-mark mt-20 scroll-mt-28 pt-20">
+          <div id="how" className="rule-t rule-mark mt-8 scroll-mt-28 pt-16">
             {/* the rule breaks around the mark — see .rule-mark */}
             <span
               className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2"
@@ -128,7 +128,7 @@ export default function Home() {
               <span className="hairline inline-block rounded-full border bg-paper-dim px-3.5 py-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] text-forest">
                 One store, every client
               </span>
-              <h2 className="mt-6 text-[clamp(1.9rem,4.6vw,3.4rem)] font-light leading-[1.06] tracking-[-0.03em] text-forest">
+              <h2 className="mt-6 text-balance text-[clamp(1.9rem,4.6vw,3.4rem)] font-light leading-[1.06] tracking-[-0.03em] text-forest">
                 Write once. Recall everywhere.
               </h2>
               <p className="mx-auto mt-5 max-w-md text-[13.5px] leading-[1.75] text-forest/75">
@@ -153,7 +153,7 @@ export default function Home() {
               <span className="hairline inline-block rounded-full border bg-paper-dim px-3.5 py-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] text-forest">
                 In the prompt
               </span>
-              <h2 className="mt-6 text-[clamp(1.9rem,4.6vw,3.4rem)] font-light leading-[1.06] tracking-[-0.03em] text-forest">
+              <h2 className="mt-6 text-balance text-[clamp(1.9rem,4.6vw,3.4rem)] font-light leading-[1.06] tracking-[-0.03em] text-forest">
                 What the model sees
               </h2>
               <p className="mx-auto mt-5 max-w-[38rem] text-[13.5px] leading-[1.75] text-forest/75">
@@ -187,7 +187,7 @@ export default function Home() {
               so every address submitted here was silently dropped. */}
           <div id="waitlist" className="rule-t mt-24 pt-16 text-center">
             <Reveal>
-              <h2 className="text-[clamp(1.6rem,3.6vw,2.6rem)] font-light leading-[1.14] tracking-[-0.025em] text-forest">
+              <h2 className="text-balance text-[clamp(1.6rem,3.6vw,2.6rem)] font-light leading-[1.14] tracking-[-0.025em] text-forest">
                 Stop re-explaining yourself.
               </h2>
               <p className="mx-auto mt-4 max-w-sm text-[13.5px] leading-[1.7] text-forest/70">

@@ -20,6 +20,7 @@ import { Plus, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
+  listAllEdges,
   useApiSession,
   type EdgeRow,
   type EntityRow,
@@ -57,7 +58,7 @@ function GraphView() {
   const [edges, setEdges] = useState<EdgeRow[] | null>(null);
   const [memories, setMemories] = useState<Fact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedIdState] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -71,12 +72,18 @@ function GraphView() {
   const [linkTarget, setLinkTarget] = useState("");
   const [linkType, setLinkType] = useState("related_to");
 
+  /* A target picked for one node must not carry over to the next. */
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectedIdState(id);
+    setLinkTarget("");
+  }, []);
+
   /* Pure fetch; setState happens in the caller so the effect body never
      sets state synchronously (react-hooks/set-state-in-effect). */
   const fetchAll = useCallback(async () => {
     return Promise.all([
       request<{ entities: EntityRow[] }>("/entities"),
-      request<{ edges: EdgeRow[] }>("/edges").catch(() => null),
+      listAllEdges(request).catch(() => null),
       request<{ memories: Fact[] }>("/memories?limit=100").catch(() => null),
     ]);
   }, [request]);
@@ -176,8 +183,12 @@ function GraphView() {
         else unresolved.push(e.targetId);
       }
       if (e.targetId === selected.$id) {
+        /* Incoming links come from a memory (mentioned_in) or from another
+           entity that asserted a relationship to this one. */
         const mem = memById.get(e.sourceId);
+        const other = mem ? undefined : entById.get(e.sourceId);
         if (mem) mentionedIn.push({ edgeId: e.$id, memory: mem });
+        else if (other) linked.push({ edgeId: e.$id, node: other });
         else unresolved.push(e.sourceId);
       }
     }

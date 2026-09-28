@@ -144,6 +144,30 @@ export type MemoryCandidate = {
 
 export type ApiRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 
+/* The edges endpoint pages at 500. Follow its cursor up to a ceiling so
+   a large graph renders whole without an unbounded number of requests;
+   `truncated` lets the page say so when the ceiling is hit. */
+export const EDGE_PAGE_SIZE = 500;
+export const EDGE_PAGE_CEILING = 10;
+
+export async function listAllEdges(
+  request: ApiRequest,
+): Promise<{ edges: EdgeRow[]; truncated: boolean }> {
+  const edges: EdgeRow[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < EDGE_PAGE_CEILING; page++) {
+    const query = new URLSearchParams({ limit: String(EDGE_PAGE_SIZE) });
+    if (cursor) query.set("cursor", cursor);
+    const result: { edges: EdgeRow[]; nextCursor?: string | null } = await request(
+      `/edges?${query}`,
+    );
+    edges.push(...result.edges);
+    cursor = result.nextCursor ?? null;
+    if (!cursor) return { edges, truncated: false };
+  }
+  return { edges, truncated: true };
+}
+
 export function decisionLine(d: SaveDecision): string {
   if (d.action === "reject") return `Not stored — ${d.reason ?? "filtered"}`;
   if (d.action === "duplicate") return "Already known. Nothing changed.";

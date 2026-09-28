@@ -786,7 +786,7 @@ function DetailPanel({
     );
 
   return (
-    <div className="absolute bottom-4 left-4 right-4 z-20 max-h-[55%] overflow-auto rounded-2xl border border-white/10 bg-[#121514]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:left-auto sm:w-[360px] lg:bottom-auto lg:right-5 lg:top-5 lg:max-h-[76%]">
+    <div className="absolute bottom-4 left-4 right-4 z-20 max-h-[55%] overflow-auto rounded-2xl border border-white/10 bg-[#121514]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:left-auto sm:w-[360px] lg:bottom-auto lg:right-4 lg:top-[4.25rem] lg:max-h-[calc(100%-15.5rem)]">
       <div className="flex items-center gap-2">
         <span
           className="inline-block h-2.5 w-2.5 rounded-full"

@@ -30,18 +30,21 @@ async function listEdges(request: Request) {
   const auth = await authenticate(request);
   if (!auth.ok) return fail(auth.status, auth.error);
 
-  const limit = Math.min(
-    Math.max(Number(new URL(request.url).searchParams.get('limit')) || 300, 1),
-    500,
-  );
+  const params = new URL(request.url).searchParams;
+  const limit = Math.min(Math.max(Number(params.get('limit')) || 300, 1), 500);
+  const cursor = str(params.get('cursor') ?? undefined, 'cursor', { min: 1, max: 64 });
 
+  /* Same cursor pattern as listAllDocuments: the default order is stable,
+     and a full page means there may be more, so the caller gets a cursor. */
   const res = await adminDb.listDocuments(DATABASE_ID, COLLECTIONS.edges, [
     Query.equal('userId', auth.userId),
     Query.limit(limit),
+    ...(cursor.ok ? [Query.cursorAfter(cursor.value)] : []),
   ]);
 
   const edges = res.documents.map((edge) => publicEdge(edge as unknown as EdgeDoc));
-  return Response.json({ edges, count: edges.length });
+  const nextCursor = edges.length === limit ? (edges.at(-1)?.$id ?? null) : null;
+  return Response.json({ edges, count: edges.length, nextCursor });
 }
 
 async function createEdgeRoute(request: Request) {

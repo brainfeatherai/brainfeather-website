@@ -11,17 +11,39 @@
    as an overlay so the visualization does not shrink when inspected.
    ──────────────────────────────────────────────────────────────── */
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, LocateFixed, Network, RefreshCw, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDown,
+  LocateFixed,
+  Maximize2,
+  Minus,
+  Network,
+  Plus,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
 import {
+  listAllEdges,
   useApiSession,
   type ApiRequest,
   type EdgeRow,
   type EntityRow,
   type Fact,
 } from "@/lib/api-client";
+import {
+  fitView,
+  hitTest,
+  isSettled,
+  nodeRadius,
+  seedPositions,
+  tick,
+  zoomAt,
+  type PhysicsNode,
+  type View,
+} from "@/lib/graph-physics";
 
 /* ── Colours per entity type ──────────────────────────────────── */
 const TYPE_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
@@ -52,6 +74,7 @@ const DEFAULT_EDGE_STYLE = EDGE_STYLES.co_mentioned;
 type GraphData = {
   entities: EntityRow[];
   edges: EdgeRow[];
+  edgesTruncated: boolean;
   memories: Fact[];
 };
 
@@ -64,37 +87,23 @@ async function loadGraphData(
       onEntities?.(result.entities);
       return result;
     }),
-    request<{ edges: EdgeRow[] }>("/edges").catch(() => null),
+    listAllEdges(request).catch(() => null),
     request<{ memories: Fact[] }>("/memories?limit=100").catch(() => null),
   ]);
 
   return {
     entities: entityResult.entities,
     edges: edgeResult?.edges ?? [],
+    edgesTruncated: edgeResult?.truncated ?? false,
     memories: memoryResult?.memories ?? [],
   };
 }
 
-/* ── Physics constants ───────────────────────────────────────── */
-const REPULSION = 6000;
-const ATTRACTION = 0.005;
-const IDEAL_LENGTH = 120;
-const CENTER_GRAVITY = 0.01;
-const DAMPING = 0.85;
-const MIN_DIST = 30;
-const NODE_RADIUS = 8;
-
 /* ── Node position in the simulation ─────────────────────────── */
-interface SimNode {
-  id: string;
+interface SimNode extends PhysicsNode {
   name: string;
   type: string;
   summary?: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  degree: number;
 }
 
 interface SimEdge {
@@ -228,58 +237,6 @@ function GraphLegend({
   );
 }
 
-function tickSimulation(
-  sim: SimNode[],
-  edgeList: SimEdge[],
-  draggedId?: string,
-): void {
-  const byId = new Map(sim.map((node) => [node.id, node]));
-
-  for (const node of sim) {
-    node.vx = 0;
-    node.vy = 0;
-
-    for (const other of sim) {
-      if (node.id === other.id) continue;
-      let dx = node.x - other.x;
-      let dy = node.y - other.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      if (dist < MIN_DIST) {
-        dx = (dx / dist) * MIN_DIST;
-        dy = (dy / dist) * MIN_DIST;
-      }
-      const force = REPULSION / (dist * dist);
-      node.vx += (dx / dist) * force;
-      node.vy += (dy / dist) * force;
-    }
-
-    node.vx -= node.x * CENTER_GRAVITY;
-    node.vy -= node.y * CENTER_GRAVITY;
-  }
-
-  for (const edge of edgeList) {
-    const source = byId.get(edge.source);
-    const target = byId.get(edge.target);
-    if (!source || !target) continue;
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const force = (dist - IDEAL_LENGTH) * ATTRACTION;
-    source.vx += (dx / dist) * force;
-    source.vy += (dy / dist) * force;
-    target.vx -= (dx / dist) * force;
-    target.vy -= (dy / dist) * force;
-  }
-
-  for (const node of sim) {
-    if (node.id === draggedId) continue;
-    node.vx *= DAMPING;
-    node.vy *= DAMPING;
-    node.x += node.vx;
-    node.y += node.vy;
-  }
-}
-
 /* ── Tooltip ─────────────────────────────────────────────────── */
 function Tooltip({
   node,
@@ -320,6 +277,24 @@ function Tooltip({
 }
 
 /* ── Canvas graph ────────────────────────────────────────────── */
+
+/* One active pointer: dragging a node, or panning the view when the
+   press started on empty canvas (`node` is null). */
+type PointerDrag = {
+  pointerId: number;
+  node: SimNode | null;
+  startX: number;
+  startY: number;
+  offsetX: number;
+  offsetY: number;
+  viewX: number;
+  viewY: number;
+  moved: boolean;
+};
+
+const DRAG_THRESHOLD = 4;
+const HIDDEN_TOOLTIP = { node: null, x: 0, y: 0, visible: false };
+
 function GraphCanvas({
   nodes,
   edges,
@@ -338,87 +313,119 @@ function GraphCanvas({
   onSelect: (node: SimNode | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const simRef = useRef(nodes.map((n) => ({ ...n })));
+  const simRef = useRef<SimNode[]>([]);
   const edgesRef = useRef(edges);
   const selectedRef = useRef(selectedId);
   const focusRef = useRef(focusIds);
   const focusActiveRef = useRef(focusActive);
   const initializedRef = useRef(false);
   const resetRef = useRef(resetKey);
-  const rafRef = useRef<number>(0);
-  const dragRef = useRef<{ node: SimNode; offsetX: number; offsetY: number } | null>(null);
+  const viewRef = useRef<View>({ scale: 1, x: 0, y: 0 });
+  /* Follow the layout with the camera until the user takes over. */
+  const autoFitRef = useRef(true);
+  const alphaRef = useRef(0);
+  const rafRef = useRef(0);
+  const frameRef = useRef<() => void>(() => {});
+  const dragRef = useRef<PointerDrag | null>(null);
+  const reducedMotionRef = useRef(false);
   const [tooltip, setTooltip] = useState<{
     node: SimNode | null;
     x: number;
     y: number;
     visible: boolean;
-  }>({ node: null, x: 0, y: 0, visible: false });
+  }>(HIDDEN_TOOLTIP);
 
-  /* Keep interaction state available to the animation frame without
-     restarting the simulation every time search or selection changes. */
+  /* The frame loop only runs while the layout is cooling, the camera is
+     easing, or input asks for a redraw; a settled graph costs nothing.
+     `alpha` reheats the simulation. */
+  const wake = useCallback((alpha = 0) => {
+    alphaRef.current = Math.max(alphaRef.current, alpha);
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => frameRef.current());
+    }
+  }, []);
+
+  /* Keep interaction state available to the frame without restarting
+     the simulation every time search or selection changes. */
   useEffect(() => {
     selectedRef.current = selectedId;
     focusRef.current = focusIds;
     focusActiveRef.current = focusActive;
-  }, [selectedId, focusIds, focusActive]);
+    wake();
+  }, [selectedId, focusIds, focusActive, wake]);
 
-  /* Initialise positions on first render or when nodes change */
+  /* Seed positions on first render or reset; keep them when data changes. */
   useEffect(() => {
+    reducedMotionRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const shouldReset = !initializedRef.current || resetRef.current !== resetKey;
     const existing = shouldReset
       ? new Map<string, SimNode>()
       : new Map(simRef.current.map((n) => [n.id, n]));
     initializedRef.current = true;
     resetRef.current = resetKey;
-    simRef.current = nodes.map((n, i) => {
-      const prev = existing.get(n.id);
-      if (prev) return { ...n, x: prev.x, y: prev.y, vx: 0, vy: 0 };
-      const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
-      const r = Math.min(260, 52 + nodes.length * 6);
-      return { ...n, x: Math.cos(angle) * r, y: Math.sin(angle) * r, vx: 0, vy: 0 };
+    simRef.current = seedPositions(nodes).map((node) => {
+      const prev = existing.get(node.id);
+      return prev ? { ...node, x: prev.x, y: prev.y, vx: 0, vy: 0 } : node;
     });
     edgesRef.current = edges;
-  }, [nodes, edges, resetKey]);
+    if (shouldReset) autoFitRef.current = true;
 
-  /* Render loop */
+    const alpha = shouldReset ? 1 : 0.5;
+    if (reducedMotionRef.current) {
+      /* Settle off-screen and draw the final layout once. */
+      let a = alpha;
+      for (let i = 0; i < 600 && !isSettled(a); i++) a = tick(simRef.current, edges, a);
+      alphaRef.current = a;
+      wake();
+    } else {
+      wake(alpha);
+    }
+  }, [nodes, edges, resetKey, wake]);
+
+  /* Frame loop, resize and font readiness */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const render = () => {
-      tickSimulation(
-        simRef.current,
-        edgesRef.current,
-        dragRef.current?.node.id,
-      );
+    /* next/font exposes the family through a CSS variable; the literal
+       'Geist Mono' name is not registered and silently falls back. */
+    const mono = getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-geist-mono")
+      .trim();
+    const labelFont = `600 10px ${mono ? `${mono}, ` : ""}monospace`;
 
-      const rect = canvas.getBoundingClientRect();
+    const draw = (width: number, height: number) => {
       const dpr = window.devicePixelRatio || 1;
-      const width = Math.round(rect.width * dpr);
-      const height = Math.round(rect.height * dpr);
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
+      const pixelWidth = Math.round(width * dpr);
+      const pixelHeight = Math.round(height * dpr);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
 
-      const cx = rect.width / 2;
-      const cy = rect.height / 2;
+      const view = viewRef.current;
+      const originX = width / 2 + view.x;
+      const originY = height / 2 + view.y;
 
-      ctx.clearRect(0, 0, rect.width, rect.height);
-
-      /* Quiet drafting grid and orbital guides give the canvas spatial
-         structure without competing with the graph. */
+      /* Quiet drafting grid, anchored to the view so it pans with the
+         graph but stays a constant density on screen. */
+      const step = 34;
       ctx.fillStyle = "rgba(255,255,255,0.085)";
-      for (let gx = cx % 34; gx < rect.width; gx += 34) {
-        for (let gy = cy % 34; gy < rect.height; gy += 34) {
+      for (let gx = ((originX % step) + step) % step; gx < width; gx += step) {
+        for (let gy = ((originY % step) + step) % step; gy < height; gy += step) {
           ctx.beginPath();
           ctx.arc(gx, gy, 0.65, 0, Math.PI * 2);
           ctx.fill();
         }
       }
+
+      ctx.translate(originX, originY);
+      ctx.scale(view.scale, view.scale);
+      const hairline = 1 / view.scale;
 
       const sim = simRef.current;
       const byId = new Map(sim.map((node) => [node.id, node]));
@@ -435,11 +442,12 @@ function GraphCanvas({
       }
 
       ctx.save();
-      ctx.setLineDash([3, 8]);
+      ctx.setLineDash([3 * hairline, 8 * hairline]);
       ctx.strokeStyle = "rgba(255,255,255,0.035)";
+      ctx.lineWidth = hairline;
       for (const radius of [96, 192, 288]) {
         ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.restore();
@@ -457,18 +465,18 @@ function GraphCanvas({
         ctx.save();
         ctx.setLineDash(style.dash);
         ctx.strokeStyle = style.color + (emphasized ? "c4" : "35");
-        ctx.lineWidth = emphasized ? 1.65 : 0.8;
+        ctx.lineWidth = (emphasized ? 1.65 : 0.8) * Math.max(hairline, 0.6);
 
         ctx.beginPath();
-        ctx.moveTo(cx + a.x, cy + a.y);
-        ctx.lineTo(cx + b.x, cy + b.y);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
         ctx.stroke();
 
         if (style.directed && emphasized) {
           const angle = Math.atan2(b.y - a.y, b.x - a.x);
-          const targetRadius = NODE_RADIUS + Math.min(b.degree, 10) * 0.7 + 3;
-          const tipX = cx + b.x - Math.cos(angle) * targetRadius;
-          const tipY = cy + b.y - Math.sin(angle) * targetRadius;
+          const targetRadius = nodeRadius(b) + 3;
+          const tipX = b.x - Math.cos(angle) * targetRadius;
+          const tipY = b.y - Math.sin(angle) * targetRadius;
           ctx.fillStyle = style.color + "d8";
           ctx.beginPath();
           ctx.moveTo(tipX, tipY);
@@ -486,20 +494,27 @@ function GraphCanvas({
         ctx.restore();
       }
 
+      /* Labels shrink with the view; below a readable size only the
+         selected and matched nodes keep theirs. */
+      const labelsReadable = view.scale >= 0.6;
+      ctx.font = labelFont;
+      ctx.textAlign = "center";
+
       /* Draw nodes */
       for (const n of sim) {
         const c = TYPE_COLORS[n.type] ?? DEFAULT_COLOR;
         const isSelected = n.id === selected;
+        const isMatch = hasSearch && focus.has(n.id);
         const inNeighborhood = !selected || neighborhood.has(n.id);
         const matchesSearch = !hasSearch || focus.has(n.id);
         const muted = !inNeighborhood || !matchesSearch;
-        const r = NODE_RADIUS + Math.min(n.degree, 10) * 0.7 + (isSelected ? 2 : 0);
+        const r = nodeRadius(n) + (isSelected ? 2 : 0);
 
-        if (isSelected || (hasSearch && focus.has(n.id))) {
+        if (isSelected || isMatch) {
           ctx.strokeStyle = c.fill + "55";
           ctx.lineWidth = 8;
           ctx.beginPath();
-          ctx.arc(cx + n.x, cy + n.y, r + 5, 0, Math.PI * 2);
+          ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
           ctx.stroke();
         }
 
@@ -507,7 +522,7 @@ function GraphCanvas({
         ctx.globalAlpha = muted ? 0.18 : 1;
         ctx.fillStyle = c.fill;
         ctx.beginPath();
-        ctx.arc(cx + n.x, cy + n.y, r, 0, Math.PI * 2);
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.fill();
 
         /* Ring */
@@ -517,107 +532,214 @@ function GraphCanvas({
 
         /* Labels sit on small paper tabs so they remain legible over
            edges without looking like a cloud of raw canvas text. */
-        ctx.font = "600 10px 'Geist Mono', monospace";
-        ctx.textAlign = "center";
-        const labelWidth = ctx.measureText(n.name).width + 12;
-        const labelX = cx + n.x - labelWidth / 2;
-        const labelY = cy + n.y + r + 7;
-        ctx.fillStyle = "rgba(10,12,11,0.88)";
-        ctx.beginPath();
-        ctx.roundRect(labelX, labelY, labelWidth, 18, 6);
-        ctx.fill();
-        ctx.fillStyle = "rgba(238,243,241,0.86)";
-        ctx.fillText(n.name, cx + n.x, labelY + 12.5);
+        if (labelsReadable || isSelected || isMatch) {
+          const labelWidth = ctx.measureText(n.name).width + 12;
+          const labelX = n.x - labelWidth / 2;
+          const labelY = n.y + r + 7;
+          ctx.fillStyle = "rgba(10,12,11,0.88)";
+          ctx.beginPath();
+          ctx.roundRect(labelX, labelY, labelWidth, 18, 6);
+          ctx.fill();
+          ctx.fillStyle = "rgba(238,243,241,0.86)";
+          ctx.fillText(n.name, n.x, labelY + 12.5);
+        }
         ctx.globalAlpha = 1;
       }
-
-      rafRef.current = requestAnimationFrame(render);
     };
 
-    rafRef.current = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, []);
+    frameRef.current = () => {
+      rafRef.current = 0;
+      const sim = simRef.current;
+      const settled = isSettled(alphaRef.current);
+      if (!settled) {
+        alphaRef.current = tick(
+          sim,
+          edgesRef.current,
+          alphaRef.current,
+          dragRef.current?.node?.id,
+        );
+      }
 
-  /* Mouse interactions */
-  const screenToSim = (clientX: number, clientY: number) => {
+      const rect = canvas.getBoundingClientRect();
+      let easing = false;
+      if (autoFitRef.current) {
+        const target = fitView(sim, rect.width, rect.height);
+        const view = viewRef.current;
+        const ease = reducedMotionRef.current ? 1 : 0.16;
+        const next = {
+          scale: view.scale + (target.scale - view.scale) * ease,
+          x: view.x + (target.x - view.x) * ease,
+          y: view.y + (target.y - view.y) * ease,
+        };
+        easing =
+          Math.abs(target.scale - next.scale) > 0.002 ||
+          Math.abs(target.x - next.x) > 0.5 ||
+          Math.abs(target.y - next.y) > 0.5;
+        viewRef.current = easing ? next : target;
+      }
+
+      draw(rect.width, rect.height);
+      if (!isSettled(alphaRef.current) || easing) {
+        rafRef.current = requestAnimationFrame(() => frameRef.current());
+      }
+    };
+
+    const resize = new ResizeObserver(() => wake());
+    resize.observe(canvas);
+    void document.fonts?.ready.then(() => wake());
+    wake();
+
+    return () => {
+      resize.disconnect();
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    };
+  }, [wake]);
+
+  /* Wheel zoom needs a non-passive listener to keep the page still. */
+  useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: clientX - rect.left - rect.width / 2,
-      y: clientY - rect.top - rect.height / 2,
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+      autoFitRef.current = false;
+      viewRef.current = zoomAt(
+        viewRef.current,
+        Math.exp(-delta * 0.0015),
+        event.clientX - rect.left - rect.width / 2,
+        event.clientY - rect.top - rect.height / 2,
+      );
+      wake();
     };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [wake]);
+
+  /* Pointer interactions */
+  const toWorld = (clientX: number, clientY: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const view = viewRef.current;
+    const px = clientX - (rect?.left ?? 0) - (rect?.width ?? 0) / 2;
+    const py = clientY - (rect?.top ?? 0) - (rect?.height ?? 0) / 2;
+    return { x: (px - view.x) / view.scale, y: (py - view.y) / view.scale };
   };
 
-  const findNode = (sx: number, sy: number): SimNode | null => {
-    for (const n of simRef.current) {
-      const c = canvasRef.current?.getBoundingClientRect();
-      if (!c) continue;
-      const nx = c.width / 2 + n.x;
-      const ny = c.height / 2 + n.y;
-      const dx = sx - nx;
-      const dy = sy - ny;
-      const r = NODE_RADIUS + Math.min(n.degree, 10) * 0.6;
-      if (dx * dx + dy * dy < (r + 6) * (r + 6)) return n;
+  const nodeAt = (clientX: number, clientY: number) => {
+    const point = toWorld(clientX, clientY);
+    return hitTest(simRef.current, point.x, point.y, 6 / viewRef.current.scale);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0 || dragRef.current) return;
+    const point = toWorld(e.clientX, e.clientY);
+    const node = nodeAt(e.clientX, e.clientY);
+    /* Capture keeps the drag alive when the pointer leaves the canvas,
+       so releasing outside it no longer leaves a node stuck to it. */
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      node,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: node ? point.x - node.x : 0,
+      offsetY: node ? point.y - node.y : 0,
+      viewX: viewRef.current.x,
+      viewY: viewRef.current.y,
+      moved: false,
+    };
+    setTooltip(HIDDEN_TOOLTIP);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId === e.pointerId) {
+      if (
+        !drag.moved &&
+        Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD
+      ) {
+        return;
+      }
+      drag.moved = true;
+      autoFitRef.current = false;
+      if (drag.node) {
+        const point = toWorld(e.clientX, e.clientY);
+        drag.node.x = point.x - drag.offsetX;
+        drag.node.y = point.y - drag.offsetY;
+        drag.node.vx = 0;
+        drag.node.vy = 0;
+        wake(0.3);
+      } else {
+        viewRef.current = {
+          ...viewRef.current,
+          x: drag.viewX + (e.clientX - drag.startX),
+          y: drag.viewY + (e.clientY - drag.startY),
+        };
+        wake();
+      }
+      return;
     }
-    return null;
+
+    if (e.pointerType !== "mouse") return;
+    const node = nodeAt(e.clientX, e.clientY);
+    setTooltip((current) =>
+      node || current.visible
+        ? { node, x: e.clientX, y: e.clientY, visible: Boolean(node) }
+        : current,
+    );
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const pos = screenToSim(e.clientX, e.clientY);
-    const node = findNode(e.clientX, e.clientY);
-    if (node) {
-      dragRef.current = {
-        node,
-        offsetX: pos.x - node.x,
-        offsetY: pos.y - node.y,
-      };
-    } else {
-      onSelect(null);
+  const endPointer = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    if (cancelled) return;
+    if (drag.node) onSelect(drag.node);
+    else if (!drag.moved) onSelect(null);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (dragRef.current) {
-      const pos = screenToSim(e.clientX, e.clientY);
-      dragRef.current.node.x = pos.x - dragRef.current.offsetX;
-      dragRef.current.node.y = pos.y - dragRef.current.offsetY;
-      dragRef.current.node.vx = 0;
-      dragRef.current.node.vy = 0;
-    } else {
-      const node = findNode(e.clientX, e.clientY);
-      setTooltip({
-        node,
-        x: e.clientX,
-        y: e.clientY,
-        visible: !!node,
-      });
-    }
+  const zoomBy = (factor: number) => {
+    autoFitRef.current = false;
+    viewRef.current = zoomAt(viewRef.current, factor, 0, 0);
+    wake();
   };
 
-  const handleMouseUp = () => {
-    if (dragRef.current) {
-      onSelect(dragRef.current.node);
-      dragRef.current = null;
-    }
+  const fitToScreen = () => {
+    autoFitRef.current = true;
+    wake();
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    const node = findNode(e.clientX, e.clientY);
-    onSelect(node);
-  };
+  const controlClass =
+    "grid h-8 w-8 place-items-center text-forest/45 transition-colors hover:bg-white/[0.05] hover:text-forest focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald/50";
 
   return (
     <div className="relative flex-1 overflow-hidden bg-[#0d100f]">
       <canvas
         ref={canvasRef}
-        className="h-full w-full cursor-grab active:cursor-grabbing"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
+        role="img"
+        aria-label={`Memory graph with ${nodes.length} nodes and ${edges.length} connections`}
+        className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={(e) => endPointer(e, false)}
+        onPointerCancel={(e) => endPointer(e, true)}
+        onPointerLeave={() => setTooltip(HIDDEN_TOOLTIP)}
       />
+      <div className="absolute bottom-16 right-4 z-10 flex flex-col overflow-hidden rounded-lg border border-white/[0.09] bg-[#151817]/92 shadow-[0_12px_38px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <button type="button" onClick={() => zoomBy(1.25)} aria-label="Zoom in" title="Zoom in" className={controlClass}>
+          <Plus size={14} strokeWidth={1.8} aria-hidden />
+        </button>
+        <button type="button" onClick={() => zoomBy(0.8)} aria-label="Zoom out" title="Zoom out" className={`${controlClass} border-t border-white/[0.07]`}>
+          <Minus size={14} strokeWidth={1.8} aria-hidden />
+        </button>
+        <button type="button" onClick={fitToScreen} aria-label="Fit graph to screen" title="Fit to screen" className={`${controlClass} border-t border-white/[0.07]`}>
+          <Maximize2 size={13} strokeWidth={1.8} aria-hidden />
+        </button>
+      </div>
       <Tooltip {...tooltip} />
     </div>
   );
@@ -790,6 +912,7 @@ function NodesView() {
   const [entities, setEntities] = useState<EntityRow[] | null>(null);
   const [edges, setEdges] = useState<EdgeRow[] | null>(null);
   const [memories, setMemories] = useState<Fact[] | null>(null);
+  const [edgesTruncated, setEdgesTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<SimNode | null>(null);
   const [query, setQuery] = useState("");
@@ -808,6 +931,7 @@ function NodesView() {
         if (!active) return;
         setEntities(data.entities);
         setEdges(data.edges);
+        setEdgesTruncated(data.edgesTruncated);
         setMemories(data.memories);
       })
       .catch((err: unknown) => {
@@ -835,6 +959,7 @@ function NodesView() {
       const data = await loadGraphData(request);
       setEntities(result.entities.length ? result.entities : data.entities);
       setEdges(data.edges);
+      setEdgesTruncated(data.edgesTruncated);
       setMemories(data.memories);
       setSelectedNode(null);
       setResetKey((value) => value + 1);
@@ -917,16 +1042,21 @@ function NodesView() {
   }, [entities, liveEdges]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const focusIds = new Set(
-    normalizedQuery
-      ? simNodes
-          .filter((node) =>
-            `${node.name} ${node.type} ${node.summary ?? ""}`
-              .toLowerCase()
-              .includes(normalizedQuery),
-          )
-          .map((node) => node.id)
-      : [],
+  /* Memoized so the canvas only redraws when the match set changes. */
+  const focusIds = useMemo(
+    () =>
+      new Set(
+        normalizedQuery
+          ? simNodes
+              .filter((node) =>
+                `${node.name} ${node.type} ${node.summary ?? ""}`
+                  .toLowerCase()
+                  .includes(normalizedQuery),
+              )
+              .map((node) => node.id)
+          : [],
+      ),
+    [simNodes, normalizedQuery],
   );
 
   const typeCounts = TYPE_ORDER.map((type) => ({
@@ -1026,6 +1156,17 @@ function NodesView() {
             <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">
               {simEdges.length} links
             </span>
+            {edgesTruncated ? (
+              <>
+                <span className="h-3 w-px bg-white/10" />
+                <span
+                  title="Only the first 5,000 edges are loaded."
+                  className="font-mono text-[9px] uppercase tracking-[0.12em] text-amber-200/70"
+                >
+                  Partial
+                </span>
+              </>
+            ) : null}
           </div>
 
           <div className="absolute right-4 top-4 z-30 flex max-w-[calc(100%-2rem)] items-center gap-2">
@@ -1104,7 +1245,7 @@ function NodesView() {
                 relationCounts={relationCounts}
               />
               <span className="hidden rounded-lg border border-white/8 bg-[#151817]/80 px-3 py-1.5 font-mono text-[8px] uppercase tracking-[0.1em] text-forest/35 backdrop-blur-sm sm:block">
-                Drag to arrange · click to inspect
+                Drag to arrange · scroll to zoom · click to inspect
               </span>
             </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { RequireAuth } from "@/components/AuthProvider";
@@ -10,6 +10,18 @@ import {
   type MemoryCandidate,
   type SaveDecision,
 } from "@/lib/api-client";
+import {
+  byReviewPriority,
+  confidenceBand,
+  confidencePercent,
+  type ConfidenceBand,
+} from "@/lib/review-order";
+
+const BAND_STYLE: Record<ConfidenceBand, string> = {
+  high: "border-emerald/30 bg-emerald/10 text-emerald",
+  medium: "border-amber-400/25 bg-amber-400/10 text-amber-200",
+  low: "border-white/[0.08] bg-white/[0.035] text-forest/45",
+};
 
 const ICON_BTN =
   "hairline rounded-md border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
@@ -32,6 +44,7 @@ function CandidateRow({
     day: "numeric",
     year: "numeric",
   });
+  const band = confidenceBand(candidate.confidence);
 
   return (
     <li className="hairline group rounded-xl border bg-paper p-4 transition-[border-color] duration-300 hover:border-emerald/35">
@@ -42,6 +55,14 @@ function CandidateRow({
         <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/40">
           {candidate.source}
         </span>
+        {candidate.status === "pending" ? (
+          <span
+            title={`Capture confidence ${confidencePercent(candidate.confidence)}`}
+            className={`rounded-md border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.1em] ${BAND_STYLE[band]}`}
+          >
+            {band} · {confidencePercent(candidate.confidence)}
+          </span>
+        ) : null}
         {candidate.projectId ? (
           <span
             title={candidate.projectId}
@@ -114,6 +135,14 @@ function ReviewView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  /* Pending items are a decision queue, so the likeliest keepers go first.
+     Approved and rejected are history and keep the server's newest-first order. */
+  const shown = useMemo(
+    () =>
+      candidates && status === "pending" ? byReviewPriority(candidates) : candidates,
+    [candidates, status],
+  );
 
   const fetchCandidates = useCallback(
     () =>
@@ -224,11 +253,11 @@ function ReviewView() {
         ))}
       </div>
 
-      {candidates === null ? (
+      {shown === null ? (
         <output className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">
           Loading candidates…
         </output>
-      ) : candidates.length === 0 ? (
+      ) : shown.length === 0 ? (
         error || sessionError ? null : (
           <p className="rounded-xl border border-dashed border-white/[0.10] bg-paper-dim p-6 text-[13px] text-forest/45">
             {status === "pending" ? (
@@ -247,7 +276,12 @@ function ReviewView() {
         )
       ) : (
         <ul className="grid gap-3">
-          {candidates.map((candidate) => (
+          {status === "pending" && shown.length > 1 ? (
+            <li className="list-none font-mono text-[9px] uppercase tracking-[0.1em] text-forest/35">
+              Sorted by capture confidence, highest first
+            </li>
+          ) : null}
+          {shown.map((candidate) => (
             <CandidateRow
               key={candidate.$id}
               candidate={candidate}

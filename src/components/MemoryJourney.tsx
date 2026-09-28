@@ -21,7 +21,7 @@ function BrandTile({ id, label }: { id: BrandId; label: string }) {
 type Token = ["brace" | "key" | "string" | "plain", string];
 type ConfigLine = [indent: number, tokens: Token[]];
 
-const MCP_PACKAGE = "@brainfeather/mcp@1.6.3";
+const MCP_PACKAGE = "@brainfeather/mcp@1.7.0";
 
 const TOKEN_CLASS: Record<Token[0], string> = {
   brace: "text-mint",

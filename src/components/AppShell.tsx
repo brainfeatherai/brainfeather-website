@@ -122,7 +122,9 @@ export default function AppShell({
   wide?: boolean;
   immersive?: boolean;
 }) {
-  const { user } = useAuth();
+  const { user, jwt, jwtError } = useAuth();
+  /* Reflects the dashboard session, not a promise that data is synced. */
+  const sessionState = jwtError ? "offline" : jwt ? "connected" : "connecting";
   const pathname = usePathname();
   const [navQuery, setNavQuery] = useState("");
   const navSearchRef = useRef<HTMLInputElement>(null);
@@ -232,9 +234,22 @@ export default function AppShell({
             <span className="font-mono uppercase tracking-[0.12em] text-forest/55">{title}</span>
           </div>
           <div className="ml-auto flex items-center gap-5">
-            <span className="inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald" />
-              Synced
+            <span
+              role="status"
+              title={jwtError ?? undefined}
+              className="inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35"
+            >
+              <span
+                aria-hidden
+                className={`h-1.5 w-1.5 rounded-full ${
+                  sessionState === "connected"
+                    ? "bg-emerald"
+                    : sessionState === "offline"
+                      ? "bg-red-400"
+                      : "animate-pulse bg-amber-300"
+                }`}
+              />
+              {sessionState === "connected" ? "Connected" : sessionState === "offline" ? "Offline" : "Connecting"}
             </span>
             <Link
               href="/contact"

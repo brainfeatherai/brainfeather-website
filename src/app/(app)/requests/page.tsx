@@ -6,6 +6,30 @@ import { RequireAuth } from "@/components/AuthProvider";
 import { useApiSession, type RequestAnalytics } from "@/lib/api-client";
 
 const WINDOWS = [1, 7, 30, 90] as const;
+const RING_COLORS = ["#62d5a5", "#60a5fa", "#a78bfa"];
+const RING_OTHER = "rgba(255,255,255,0.18)";
+
+/* Conic segments for the top operations plus everything else, so the
+   ring shows the same split as its legend. */
+function operationRing(analytics: RequestAnalytics): string {
+  if (!analytics.totalCalls) return "rgba(255,255,255,0.07) 0 100%";
+  const top = analytics.byOperation.slice(0, RING_COLORS.length);
+  const stops: string[] = [];
+  let start = 0;
+  top.forEach((item, index) => {
+    const end = start + (item.count / analytics.totalCalls) * 100;
+    stops.push(`${RING_COLORS[index]} ${start}% ${end}%`);
+    start = end;
+  });
+  if (start < 100) stops.push(`${RING_OTHER} ${start}% 100%`);
+  return stops.join(", ");
+}
+
+/* Metrics come from at most the 500 newest rows, so a capped count is a
+   floor, not a total. */
+function callCount(analytics: RequestAnalytics): string {
+  return analytics.capped ? `${analytics.totalCalls}+` : String(analytics.totalCalls);
+}
 
 const OPERATION_LABELS: Record<string, string> = {
   "context.read": "Recall",
@@ -31,13 +55,17 @@ function RequestsView() {
   const [operation, setOperation] = useState("all");
   const [status, setStatus] = useState("all");
   const [error, setError] = useState<string | null>(null);
+  const [loadedDays, setLoadedDays] = useState<number | null>(null);
 
   useEffect(() => {
     if (!token) return;
     let active = true;
     request<RequestAnalytics>(`/analytics/requests?days=${days}`)
       .then((response) => {
-        if (active) setAnalytics(response);
+        if (!active) return;
+        setError(null);
+        setAnalytics(response);
+        setLoadedDays(days);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : "Could not load requests.");
@@ -47,6 +75,7 @@ function RequestsView() {
     };
   }, [token, days, request]);
 
+  const refreshing = analytics !== null && loadedDays !== days && !error;
   const operations = analytics?.byOperation.map((item) => item.operation) ?? [];
   const rows = useMemo(
     () =>
@@ -72,7 +101,7 @@ function RequestsView() {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <div className="inline-flex rounded-lg border border-white/[0.08] bg-paper p-1">
           {WINDOWS.map((windowDays) => (
-            <button key={windowDays} type="button" onClick={() => setDays(windowDays)} className={`rounded-md px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] ${days === windowDays ? "bg-white/[0.10] text-forest" : "text-forest/35 hover:text-forest/65"}`}>
+            <button key={windowDays} type="button" aria-pressed={days === windowDays} onClick={() => setDays(windowDays)} className={`rounded-md px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] ${days === windowDays ? "bg-white/[0.10] text-forest" : "text-forest/35 hover:text-forest/65"}`}>
               {windowDays}d
             </button>
           ))}
@@ -93,14 +122,16 @@ function RequestsView() {
       </div>
 
       {!analytics ? (
-        <output className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">Loading requests…</output>
+        error ?? sessionError ? null : (
+          <output className="font-mono text-[10px] uppercase tracking-[0.1em] text-forest/40">Loading requests…</output>
+        )
       ) : !analytics.configured ? (
         <div className="hairline rounded-xl border border-dashed bg-paper p-10 text-center">
           <h2 className="text-[16px] font-semibold text-forest">Request telemetry is not configured</h2>
           <p className="mx-auto mt-2 max-w-lg text-[12px] leading-relaxed text-forest/45">The analytics UI is ready, but Brainfeather needs the additive request-metrics table before calls and latency can be recorded.</p>
         </div>
       ) : (
-        <>
+        <div aria-busy={refreshing} className={`transition-opacity ${refreshing ? "opacity-60" : ""}`}>
           <div className="grid gap-4 lg:grid-cols-3">
             <section className="hairline rounded-xl border bg-paper p-5">
               <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest/35">
@@ -109,12 +140,12 @@ function RequestsView() {
               <div className="mt-4 flex items-center gap-5">
                 <div
                   className="grid h-20 w-20 shrink-0 place-items-center rounded-full"
-                  style={{
-                    background: `conic-gradient(#62d5a5 0 ${analytics.successRate}%, rgba(255,255,255,0.07) ${analytics.successRate}% 100%)`,
-                  }}
+                  role="img"
+                  aria-label={`${callCount(analytics)} calls split by operation`}
+                  style={{ background: `conic-gradient(${operationRing(analytics)})` }}
                 >
                   <div className="grid h-14 w-14 place-items-center rounded-full bg-paper">
-                    <span className="text-[18px] font-semibold text-forest">{analytics.totalCalls}</span>
+                    <span className="text-[18px] font-semibold text-forest">{callCount(analytics)}</span>
                   </div>
                 </div>
                 <div className="min-w-0 flex-1 space-y-2">
@@ -122,12 +153,23 @@ function RequestsView() {
                     <div key={item.operation} className="flex items-center gap-2 text-[10px] text-forest/45">
                       <span
                         className="h-2 w-2 rounded-sm"
-                        style={{ background: ["#62d5a5", "#60a5fa", "#a78bfa"][index] }}
+                        style={{ background: RING_COLORS[index] }}
                       />
                       <span className="min-w-0 flex-1 truncate font-mono">{operationLabel(item.operation)}</span>
                       <span>{item.count}</span>
                     </div>
                   ))}
+                  {analytics.byOperation.length > RING_COLORS.length ? (
+                    <div className="flex items-center gap-2 text-[10px] text-forest/45">
+                      <span className="h-2 w-2 rounded-sm" style={{ background: RING_OTHER }} />
+                      <span className="min-w-0 flex-1 truncate font-mono">Other</span>
+                      <span>
+                        {analytics.byOperation
+                          .slice(RING_COLORS.length)
+                          .reduce((sum, item) => sum + item.count, 0)}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -139,7 +181,7 @@ function RequestsView() {
               <p className="mt-5 text-[30px] font-semibold tracking-[-0.04em] text-forest">
                 {analytics.successfulCalls}
                 <span className="ml-1 text-[13px] font-normal text-forest/30">
-                  of {analytics.totalCalls}
+                  of {callCount(analytics)}
                 </span>
               </p>
               <div className="mt-5 h-1.5 overflow-hidden rounded-sm bg-white/[0.06]">
@@ -186,8 +228,15 @@ function RequestsView() {
               </ul>
             )}
           </section>
-          {analytics.capped ? <p className="mt-3 text-[10px] text-amber-200/60">Metrics are capped at the 500 most recent requests in this window.</p> : null}
-        </>
+          <p className="mt-3 text-[10px] text-forest/35">
+            {analytics.recent.length >= 100 ? "Showing the 100 most recent requests. " : ""}
+            {analytics.capped ? (
+              <span className="text-amber-200/60">
+                Counts, success rate and latency use the 500 most recent requests in this window.
+              </span>
+            ) : null}
+          </p>
+        </div>
       )}
     </AppShell>
   );

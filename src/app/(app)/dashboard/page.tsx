@@ -117,7 +117,7 @@ function MemoryRow({
         {memory.content}
       </p>
 
-      <div className="mt-3 flex gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="mt-3 flex gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
         <button
           type="button"
           onClick={() => onEdit(memory)}

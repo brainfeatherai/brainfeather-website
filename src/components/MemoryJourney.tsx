@@ -169,10 +169,10 @@ function ContinuityVisual() {
     <div className="relative flex min-h-[320px] items-center justify-center overflow-hidden bg-[#edf4ef] p-6 sm:min-h-[370px] sm:p-9 lg:min-h-[420px]">
       <div className="absolute inset-0 opacity-28 [background-image:radial-gradient(rgba(47,122,92,.32)_0.75px,transparent_0.75px)] [background-size:22px_22px]" />
       <div className="relative flex w-full max-w-[500px] flex-col items-center pt-7">
-        <div className="relative h-[202px] w-[286px] max-w-full rounded-2xl border border-emerald/18 bg-[#d8eadf] shadow-[0_24px_54px_-34px_rgba(13,38,32,.5)]">
+        <div className="relative w-[300px] max-w-full rounded-2xl border border-emerald/18 bg-[#d8eadf] shadow-[0_24px_54px_-34px_rgba(13,38,32,.5)]">
           <div className="absolute -top-7 left-0 h-8 w-28 rounded-t-xl border border-b-0 border-emerald/18 bg-[#d8eadf]" />
           <div className="absolute inset-x-3 -top-1 h-4 rounded-t-xl bg-paper/35 blur-[1px]" aria-hidden="true" />
-          <div className="flex h-full flex-col p-5">
+          <div className="flex flex-col p-5">
             <div className="flex items-center justify-between border-b border-forest/8 pb-3">
               <div className="flex items-center gap-2.5">
                 <span className="grid h-9 w-9 place-items-center rounded-xl border border-forest/10 bg-paper/85 shadow-[0_8px_18px_-12px_rgba(13,38,32,.6)]">

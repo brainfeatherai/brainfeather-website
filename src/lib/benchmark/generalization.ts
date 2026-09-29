@@ -1,4 +1,4 @@
-import { rankMemories } from '../server/retrieval-ranking.ts';
+import { rankMemoriesWithExplanations } from '../server/retrieval-ranking.ts';
 
 /* Generalization track.
 
@@ -54,6 +54,12 @@ export type SplitMetrics = {
      answer, not a miss — measured separately because the ranker
      deliberately biases toward answering (see MIN_KNOWN_QUERY_MASS). */
   nearTopicAbstention: number;
+  /* Near-topic cases the agent is warned about: declined outright, or
+     answered with the `partial` recall reason on the top hit. */
+  nearTopicFlagged: number;
+  /* Correct top-3 answers wrongly marked `partial`. A flag that fires on
+     good answers teaches the agent to ignore it, so this must stay low. */
+  partialOnCorrectRate: number;
   byKind: Partial<Record<CaseKind, { cases: number; correct: number }>>;
   failedCases: string[];
 };
@@ -167,6 +173,56 @@ const holdoutCases: Case[] = [
   { id: 'ho-para-jest', kind: 'paraphrase', query: 'how do we run jest', expected: 'ci' },
 ];
 
+/* Frozen, written 2026-09-29 before round 4 was implemented. The first
+   holdout's query tokenization was printed while diagnosing round 3, so
+   it is no longer fully blind; this split is. Same rules: do not edit
+   it to make a change pass, and never diagnose a fix on it. */
+const HOLDOUT2_PROJECT = 'github.com/acme/billing';
+const holdout2Corpus: Memory[] = [
+  memory(HOLDOUT2_PROJECT, 'payments', 'decision', 'Payments are processed through Stripe Checkout.'),
+  memory(HOLDOUT2_PROJECT, 'currency', 'decision', 'Prices are stored as integer cents, never floats.'),
+  memory(HOLDOUT2_PROJECT, 'orm', 'code', 'Prisma is the ORM; the schema lives in prisma/schema.prisma.'),
+  memory(HOLDOUT2_PROJECT, 'e2e', 'code', 'Playwright covers the checkout flow end to end.'),
+  memory(HOLDOUT2_PROJECT, 'invoices', 'project', 'Invoices are generated as PDFs by a nightly cron job.'),
+  memory(HOLDOUT2_PROJECT, 'search', 'project', 'Product search is served by Meilisearch.'),
+  memory(HOLDOUT2_PROJECT, 'cdn', 'project', 'Static assets are served from Cloudflare.'),
+  memory(HOLDOUT2_PROJECT, 'monorepo', 'project', 'The repo is a Turborepo monorepo with apps/ and packages/.'),
+  memory(HOLDOUT2_PROJECT, 'commits', 'preference', 'Commit messages follow Conventional Commits.'),
+  memory(HOLDOUT2_PROJECT, 'tax', 'decision', 'Sales tax is calculated by Stripe Tax.'),
+  memory(HOLDOUT2_PROJECT, 'ratelimit', 'code', 'Public endpoints are rate limited to 100 requests per minute.'),
+  memory(HOLDOUT2_PROJECT, 'fonts', 'preference', 'The UI uses the Inter typeface.'),
+];
+
+const holdout2Cases: Case[] = [
+  { id: 'h2-para-pay', kind: 'paraphrase', query: 'how do customers pay', expected: 'payments' },
+  { id: 'h2-para-money', kind: 'paraphrase', query: 'how is money represented in the database', expected: 'currency' },
+  { id: 'h2-para-orm', kind: 'paraphrase', query: 'how do we access the database from code', expected: 'orm' },
+  { id: 'h2-para-e2e', kind: 'paraphrase', query: 'what tests the checkout in a browser', expected: 'e2e' },
+  { id: 'h2-para-invoice', kind: 'paraphrase', query: 'when are invoices created', expected: 'invoices' },
+  { id: 'h2-para-search', kind: 'paraphrase', query: 'what powers product search', expected: 'search' },
+  { id: 'h2-para-cdn', kind: 'paraphrase', query: 'where are images and css hosted', expected: 'cdn' },
+  { id: 'h2-para-layout', kind: 'paraphrase', query: 'how is the codebase organised', expected: 'monorepo' },
+  { id: 'h2-para-commit', kind: 'paraphrase', query: 'how should I word a commit message', expected: 'commits' },
+  { id: 'h2-para-tax', kind: 'paraphrase', query: 'who computes sales tax', expected: 'tax' },
+  { id: 'h2-para-limit', kind: 'paraphrase', query: 'how many API calls can a client make', expected: 'ratelimit' },
+  { id: 'h2-para-font', kind: 'paraphrase', query: 'what font does the site use', expected: 'fonts' },
+  { id: 'h2-typo-meili', kind: 'typo', query: 'meilisaerch', expected: 'search' },
+  { id: 'h2-typo-playwright', kind: 'typo', query: 'playwrigt tests', expected: 'e2e' },
+  { id: 'h2-morph-invoice', kind: 'morphology', query: 'invoicing schedule', expected: 'invoices' },
+  { id: 'h2-morph-limit', kind: 'morphology', query: 'rate limiting', expected: 'ratelimit' },
+  { id: 'h2-lit-turbo', kind: 'literal', query: 'turborepo', expected: 'monorepo' },
+  { id: 'h2-lit-checkout', kind: 'literal', query: 'stripe checkout', expected: 'payments' },
+  { id: 'h2-lit-cents', kind: 'literal', query: 'cents', expected: 'currency' },
+  { id: 'h2-near-webhook', kind: 'near-topic', query: 'stripe webhook signing secret', expected: null },
+  { id: 'h2-near-meili', kind: 'near-topic', query: 'meilisearch index settings', expected: null },
+  { id: 'h2-near-purge', kind: 'near-topic', query: 'cloudflare cache purge', expected: null },
+  { id: 'h2-near-rollback', kind: 'near-topic', query: 'prisma migration rollback', expected: null },
+  { id: 'h2-neg-kafka', kind: 'negative', query: 'kafka consumer lag', expected: null },
+  { id: 'h2-neg-terraform', kind: 'negative', query: 'terraform state bucket', expected: null },
+  { id: 'h2-neg-figma', kind: 'negative', query: 'figma design tokens', expected: null },
+  { id: 'h2-neg-vacation', kind: 'negative', query: 'who approves vacation requests', expected: null },
+];
+
 function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetrics {
   let relevant = 0;
   let hitAtOne = 0;
@@ -177,11 +233,17 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
   let abstained = 0;
   let nearTopic = 0;
   let nearAbstained = 0;
+  let nearFlagged = 0;
+  let partialOnCorrect = 0;
   const byKind: SplitMetrics['byKind'] = {};
   const failedCases: string[] = [];
 
   for (const item of cases) {
-    const ranked = rankMemories(corpus, item.query, { limit: 8, asOfMs: NOW }).map(({ $id }) => $id);
+    /* Fixtures carry no metadata, so the evidence bonus is zero and this
+       order is exactly rankMemories' order. */
+    const hits = rankMemoriesWithExplanations(corpus, item.query, { limit: 8, asOfMs: NOW });
+    const ranked = hits.map(({ memory }) => memory.$id);
+    const flaggedPartial = hits[0]?.explanation.reasons.includes('partial') ?? false;
     let correct: boolean;
     if (item.expected !== null) {
       relevant++;
@@ -191,11 +253,13 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
       if (position >= 0) reciprocal += 1 / (position + 1);
       correct = position >= 0 && position < 3;
       if (correct) hitAtThree++;
+      if (correct && flaggedPartial) partialOnCorrect++;
     } else {
       correct = ranked.length === 0;
       if (item.kind === 'near-topic') {
         nearTopic++;
         if (correct) nearAbstained++;
+        if (correct || flaggedPartial) nearFlagged++;
       } else {
         negatives++;
         if (correct) abstained++;
@@ -216,18 +280,25 @@ function evaluate(corpus: readonly Memory[], cases: readonly Case[]): SplitMetri
     falseAbstentionRate: relevant ? falseAbstained / relevant : 0,
     abstentionAccuracy: share(abstained, negatives),
     nearTopicAbstention: share(nearAbstained, nearTopic),
+    nearTopicFlagged: share(nearFlagged, nearTopic),
+    partialOnCorrectRate: hitAtThree ? partialOnCorrect / hitAtThree : 0,
     byKind,
     failedCases,
   };
 }
 
 export function generalizationCaseCount(): number {
-  return devCases.length + holdoutCases.length;
+  return devCases.length + holdoutCases.length + holdout2Cases.length;
 }
 
-export function runGeneralizationTrack(): { dev: SplitMetrics; holdout: SplitMetrics } {
+export function runGeneralizationTrack(): {
+  dev: SplitMetrics;
+  holdout: SplitMetrics;
+  holdout2: SplitMetrics;
+} {
   return {
     dev: evaluate(devCorpus, devCases),
     holdout: evaluate(holdoutCorpus, holdoutCases),
+    holdout2: evaluate(holdout2Corpus, holdout2Cases),
   };
 }

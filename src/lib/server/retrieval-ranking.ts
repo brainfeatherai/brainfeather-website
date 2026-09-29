@@ -24,6 +24,8 @@ export const RECALL_REASONS = [
   'user-confirmed',
   'high-confidence',
   'newest',
+  /* Appended, not inserted: reasons are emitted in this order. */
+  'partial',
 ] as const;
 
 export type RecallReason = (typeof RECALL_REASONS)[number];
@@ -90,6 +92,18 @@ const MIN_KNOWN_QUERY_MASS = 0.18;
    streaming interceptors", mass 1/6). Applying the half to the share
    check as well would drop that two-word concept recall. */
 const SIBLING_MASS_CREDIT = 0.5;
+
+/* Below this share of known IDF mass a recalled memory is flagged
+   `partial`: the corpus knows the topic but not most of the question.
+   "redis memory limit" against a store that only holds the Redis TTL
+   answers with the TTL — the right topic, possibly the wrong fact.
+
+   Flagged rather than dropped. Raising MIN_KNOWN_QUERY_MASS to decline
+   these also declined real paraphrases, because on dev the near-topic
+   questions (0.12-0.18) sit just under the weakest true paraphrases
+   (0.25). The agent can weigh a flagged hit; it cannot recover a
+   declined one. Calibrated on the dev split only. */
+const PARTIAL_QUERY_MASS = 0.25;
 
 const PROVENANCE_TYPES = new Set([
   'user',
@@ -304,6 +318,8 @@ type ScoredSet<T extends RankableMemory> = {
   /* False when the corpus does not know enough of the query's distinctive
      terms to answer it. Callers return nothing rather than a weak guess. */
   topicKnown: boolean;
+  /* True when the corpus covers under PARTIAL_QUERY_MASS of the query. */
+  partial: boolean;
   scored: ScoredMemory<T>[];
 };
 
@@ -339,6 +355,7 @@ function scoreMemories<T extends RankableMemory>(
     return {
       fallbackNewest: true,
       topicKnown: true,
+      partial: false,
       scored: [...memories]
         .sort(newestFirst)
         .map((memory) => ({
@@ -359,6 +376,7 @@ function scoreMemories<T extends RankableMemory>(
   return {
     fallbackNewest: false,
     topicKnown: relevance.topicKnown,
+    partial: relevance.knownMass < PARTIAL_QUERY_MASS,
     scored: relevance.scored,
   };
 }
@@ -368,7 +386,7 @@ function scoreRelevance<T extends RankableMemory>(
   typed: ReturnType<typeof expand>,
   queryEntities: Set<string>,
   context: { temporal: boolean; asOfMs: number },
-): { scored: ScoredMemory<T>[]; topicKnown: boolean } {
+): { scored: ScoredMemory<T>[]; topicKnown: boolean; knownMass: number } {
   const texts = memories.map(textOf);
   const titleTokens = memories.map((memory) => searchTokens(memory.title ?? ''));
   const contentTokens = memories.map((memory) =>
@@ -430,7 +448,7 @@ function scoreRelevance<T extends RankableMemory>(
     hasDistinctiveLiteral(tokenized, expanded.exact) ||
     scored.some(({ entity }) => entity > 0);
 
-  return { scored, topicKnown };
+  return { scored, topicKnown, knownMass: known.mass };
 }
 
 export function rankMemories<T extends RankableMemory>(
@@ -511,9 +529,10 @@ function buildExplanation(
     'lexical' | 'coverage' | 'concept' | 'entity' | 'recencyScore' | 'matched'
   >,
   inputs: { confidence: number; provenance?: ExplanationProvenance },
-  context: { fallbackNewest: boolean },
+  context: { fallbackNewest: boolean; partial?: boolean },
 ): MemoryExplanation {
   const reasons = new Set<RecallReason>();
+  if (context.partial) reasons.add('partial');
   if (scored.matched.length) reasons.add('lexical');
   if (scored.concept > 0) reasons.add('concept');
   if (scored.entity > 0) reasons.add('entity');
@@ -545,7 +564,7 @@ export function rankMemoriesWithExplanations<T extends ExplainableMemory>(
   const limit = Math.max(0, Math.floor(options.limit));
   if (!limit || !memories.length) return [];
 
-  const { fallbackNewest, topicKnown, scored } = scoreMemories(memories, query, {
+  const { fallbackNewest, topicKnown, partial, scored } = scoreMemories(memories, query, {
     asOfMs: options.asOfMs,
   });
   if (!fallbackNewest && !topicKnown) return [];
@@ -573,6 +592,6 @@ export function rankMemoriesWithExplanations<T extends ExplainableMemory>(
     .slice(0, limit)
     .map((entry) => ({
       memory: entry.memory,
-      explanation: buildExplanation(entry, inputs[entry.index], { fallbackNewest: false }),
+      explanation: buildExplanation(entry, inputs[entry.index], { fallbackNewest: false, partial }),
     }));
 }

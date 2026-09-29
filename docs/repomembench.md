@@ -182,11 +182,46 @@ same modal-verb shape. Holdout tokenization was printed while diagnosing, so
 treat that gain as not fully blind. Unknown-topic and near-topic abstention
 are unchanged.
 
+### Round 4: a blind holdout, and flagging instead of declining
+
+Round 3 left the first holdout partly seen, so a second one, `holdout2`
+(a billing service, 27 cases), was written and frozen before any round-4
+code. Only its aggregate scores were printed while working.
+
+Near-topic questions were measured before changing anything. On dev they
+cover 12-18% of the query's IDF mass; the weakest true paraphrases cover
+25%. Raising the abstention floor into that gap was tried and rejected: at
+0.22 it declined a holdout paraphrase and failed the core benchmark, and
+it still declined no near-topic question.
+
+So a weakly covered answer is kept but labelled. Hits whose query the
+corpus covers under 25% carry a new recall reason, `partial`, appended to
+the stable reason list. An agent reading `recalled: lexical+partial` knows
+it has the right topic and maybe not the right fact. `lexical+partial` is
+worth checking; a declined answer is gone.
+
+A locale cluster (spelling variants, British and American English) closed
+the last dev paraphrase miss, `should I write color or colour`.
+
+| Metric | Dev | Holdout | Holdout2 (blind) |
+| --- | ---: | ---: | ---: |
+| Hit@3 | 92.3% -> 100% | 84.2% -> 84.2% | 63.2% -> 63.2% |
+| Near-topic warned (declined or `partial`) | 0% -> 100% | 0% -> 33% | 0% -> 50% |
+| Correct answers wrongly marked `partial` | 0% | 6.3% | 0% |
+| Unknown-topic abstention | 100% | 66.7% | 75% |
+
+Two things are true at once. Every dev near-topic case is now flagged, and
+blind, the flag catches half of them at almost no cost to good answers.
+And holdout2's 63% Hit@3 is the honest number for vocabulary nobody
+curated. Its failing cases were deliberately not inspected, so it can
+measure the next round too; the gap is recorded as a target, not closed
+from its cases. Closing it in general needs derived keys attached at
+write time, which is a write-path change.
+
 `benchmarks/baselines/generalization.json` records these as floors, not
-pins: a split may improve but must not fall below them. Near-topic
-abstention ("how many redis cluster shards" when only the Redis TTL is
-stored) is an open target. The ranker deliberately prefers a weak extra
-answer to none, so closing it needs a decision, not a threshold tweak.
+pins: a split may improve but must not fall below them. It also sets
+ceilings on `partialOnCorrectRate`, so the flag cannot drift into firing on
+good answers.
 
 ## Scope hierarchy
 

@@ -161,6 +161,27 @@ near-topic questions. Multi-key indexing, which attaches derived keys to a
 memory at write time, is the likely route to the vocabulary gaps, but it is
 a write-path change rather than a ranking tweak.
 
+### Round 3: words that carry no topic
+
+Two dev misses were diagnosed, not fitted:
+
+- `where should I put an API token` declined because `should` counted as
+  unknown IDF mass. Modal verbs (`can`, `should`, `would` and similar) are
+  now stopwords. `token` and `credentials` also sit in the security cluster:
+  an API token is a secret to store, not only a login artefact.
+- `how big should a PR be` could not reach "small focused pull requests".
+  `pull request` now joins to `pr`, which heads a small code-review cluster.
+
+| Split | Hit@3 before | Hit@3 after | False abstention before | After |
+| --- | ---: | ---: | ---: | ---: |
+| Dev | 76.9% | 92.3% | 15.4% | 7.7% |
+| Holdout | 78.9% | 84.2% | 21.1% | 15.8% |
+
+The holdout gain is one case, `who can access admin pages`, which had the
+same modal-verb shape. Holdout tokenization was printed while diagnosing, so
+treat that gain as not fully blind. Unknown-topic and near-topic abstention
+are unchanged.
+
 `benchmarks/baselines/generalization.json` records these as floors, not
 pins: a split may improve but must not fall below them. Near-topic
 abstention ("how many redis cluster shards" when only the Redis TTL is

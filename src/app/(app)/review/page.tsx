@@ -299,7 +299,7 @@ function ReviewView() {
                 <Link href="/api-keys" className="underline decoration-emerald/40 underline-offset-2">
                   an API key
                 </Link>{" "}
-                and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.7.0 init</code>
+                and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.8.0 init</code>
                 . Inferred facts appear here instead of entering recall, unless a later session captures them again.
               </>
             ) : (

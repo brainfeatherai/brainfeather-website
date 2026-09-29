@@ -152,7 +152,9 @@ export default function AgentMemoryPage() {
       <p className={P}>
         Brainfeather is a memory layer for coding agents, served over MCP. Memories are scoped
         to a repository and can be narrowed to a branch or a task. Inferred facts wait at a
-        review queue and do not enter recall until you approve them. Superseded facts are kept
+        review queue and do not enter recall until you approve them, or until a later session
+        captures the same fact again and it replaces nothing; those approvals can be undone for
+        7 days. Superseded facts are kept
         for history but no longer returned.
       </p>
       <div className="hairline mt-6 overflow-hidden rounded-xl border">

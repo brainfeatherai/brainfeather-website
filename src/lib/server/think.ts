@@ -24,6 +24,7 @@ import 'server-only';
 import { extractEntities } from './entities.ts';
 import {
   findDuplicate,
+  jaccardSimilarity,
   junkReason,
   planSupersedes,
   type MemoryType,
@@ -74,6 +75,15 @@ export type Decision =
   | { action: 'reject'; reason: string }
   | { action: 'duplicate'; id: string }
   | { action: 'add'; id: string; invalidated: string[]; reason: string };
+
+/* Thrown instead of storing when the caller only accepts a purely additive
+   save. Auto-approval uses it: anything that would retire an existing
+   memory has to be seen by a person, so the candidate goes back to review. */
+export class NeedsReview extends Error {
+  constructor(message = 'This fact would replace an existing memory and needs review.') {
+    super(message);
+  }
+}
 
 export async function enrichMemory(
   userId: string,
@@ -169,7 +179,11 @@ function temporalTypeFor(type: MemoryType): TemporalType {
 
 /* ── Pipeline ───────────────────────────────────────────────────── */
 
-export async function think(userId: string, cand: Candidate): Promise<Decision> {
+export async function think(
+  userId: string,
+  cand: Candidate,
+  opts: { requireNoSupersede?: boolean } = {},
+): Promise<Decision> {
   const content = cand.content.replace(/\s+/g, ' ').trim();
   const nowMs = Date.now();
   const observedAt = cand.observedAt ?? new Date(nowMs).toISOString();
@@ -205,6 +219,16 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
       : existing;
     const dup = findDuplicate(content, duplicatePool, cand.supersedesId);
     if (dup) {
+      /* A near-match with different words may be a correction ("deployed on
+         Fly.io" vs "deployed on Vercel"), so only an identical restatement
+         may complete without review. */
+      if (
+        opts.requireNoSupersede &&
+        (jaccardSimilarity(content, dup.content) < 1 ||
+          metadataOf(dup).intendedSupersedes?.length)
+      ) {
+        throw new NeedsReview();
+      }
       if (cand.supersedesId === dup.$id) {
         return { action: 'reject', reason: 'a memory cannot supersede itself' };
       }
@@ -246,6 +270,7 @@ export async function think(userId: string, cand: Candidate): Promise<Decision> 
   if ('reject' in planned) return { action: 'reject', reason: planned.reject };
 
   const { doomed, type, reason } = planned;
+  if (opts.requireNoSupersede && doomed.length) throw new NeedsReview();
 
   // 5. Store.
   const created = await createMemory(userId, {

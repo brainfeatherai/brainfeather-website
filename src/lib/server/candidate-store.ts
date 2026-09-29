@@ -29,11 +29,13 @@ export type MemoryCandidateDoc = {
   status: CandidateStatus;
   reviewedAt?: string;
   decision?: Decision;
+  /** Approved by capture without a person, and undoable for a while. */
+  autoApproved?: boolean;
 };
 
 type StoredCandidateDoc = Omit<
   MemoryCandidateDoc,
-  'sessionId' | 'content' | 'title' | 'projectId' | 'provenance' | 'decision'
+  'sessionId' | 'content' | 'title' | 'projectId' | 'provenance' | 'decision' | 'autoApproved'
 > & {
   sessionId?: string;
   content: string;
@@ -162,7 +164,21 @@ export function decodeCandidateDocument(row: StoredCandidateDoc): MemoryCandidat
     provenance: scopedProvenance
       ? (scopedProvenance.p as Candidate['provenance'] | undefined)
       : (parsedProvenance as Candidate['provenance'] | undefined),
-    decision: decision ? (JSON.parse(decision) as Decision) : undefined,
+    ...decodedDecision(decision),
+  };
+}
+
+/* The auto flag rides inside the encrypted decision so marking an approval
+   as automatic needs no schema change. Older rows have no flag. */
+function decodedDecision(raw: string | undefined): {
+  decision: Decision | undefined;
+  autoApproved?: boolean;
+} {
+  if (!raw) return { decision: undefined };
+  const { auto, ...decision } = JSON.parse(raw) as Decision & { auto?: unknown };
+  return {
+    decision: decision as Decision,
+    ...(auto === true ? { autoApproved: true } : {}),
   };
 }
 
@@ -275,6 +291,7 @@ export async function completeCandidateApproval(
   userId: string,
   id: string,
   decision: Decision,
+  opts: { auto?: boolean } = {},
 ): Promise<MemoryCandidateDoc | null> {
   const candidate = await getMemoryCandidate(userId, id);
   if (!candidate || candidate.status !== 'approved') return null;
@@ -284,7 +301,7 @@ export async function completeCandidateApproval(
     id,
     {
       decision: encryptedField(
-        JSON.stringify(decision),
+        JSON.stringify(opts.auto ? { ...decision, auto: true } : decision),
         userId,
         id,
         'decision',

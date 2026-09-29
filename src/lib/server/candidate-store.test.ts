@@ -8,6 +8,8 @@ import {
   decodeCandidateDocument,
   encodeCandidateDocument,
 } from './candidate-store.ts';
+import { COLLECTIONS } from './appwrite-admin.ts';
+import { encryptStoredValue } from './data-encryption.ts';
 
 const ORIGINAL_MODE = process.env.BRAINFEATHER_DATA_ENCRYPTION;
 const ORIGINAL_KEYS = process.env.BRAINFEATHER_DATA_ENCRYPTION_KEYS;
@@ -144,4 +146,34 @@ test('fits maximum validated scope and provenance in the candidate envelope', ()
 
   assert.ok((encoded.projectId?.length ?? 0) <= 256);
   assert.ok((encoded.provenance?.length ?? 0) <= 768);
+});
+
+test('reads the auto-approval flag out of the encrypted decision', () => {
+  const encoded = encodeCandidateDocument('user-1', 'candidate-2', {
+    content: 'This project uses Vitest.',
+    category: 'code',
+  });
+  const decision = (value: object) =>
+    encryptStoredValue(JSON.stringify(value), {
+      userId: 'user-1',
+      collection: COLLECTIONS.memoryCandidates,
+      documentId: 'candidate-2',
+      field: 'decision',
+    });
+  const row = (value: object) =>
+    decodeCandidateDocument({
+      $id: 'candidate-2',
+      $createdAt: '2026-08-28T00:00:00.000Z',
+      $updatedAt: '2026-08-28T00:00:00.000Z',
+      ...encoded,
+      status: 'approved',
+      decision: decision(value),
+    });
+
+  const auto = row({ action: 'add', id: 'mem-1', invalidated: [], reason: 'new fact', auto: true });
+  assert.equal(auto.autoApproved, true);
+  assert.deepEqual(auto.decision, { action: 'add', id: 'mem-1', invalidated: [], reason: 'new fact' });
+
+  const manual = row({ action: 'add', id: 'mem-1', invalidated: [], reason: 'new fact' });
+  assert.equal(manual.autoApproved, undefined);
 });

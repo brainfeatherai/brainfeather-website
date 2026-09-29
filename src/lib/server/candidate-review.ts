@@ -7,7 +7,7 @@ import {
   type MemoryCandidateDoc,
 } from './candidate-store.ts';
 import { undoBlocker } from '../auto-approval.ts';
-import { syncMentionEdges, updateMemory } from './memory-store.ts';
+import { getMemory, syncMentionEdges, updateMemory } from './memory-store.ts';
 import { NeedsReview, think, type Candidate, type Decision } from './think.ts';
 
 export class CandidateReviewError extends Error {
@@ -151,12 +151,14 @@ export async function undoAutoApproval(
   const blocked = undoBlocker(existing);
   if (blocked) throw new CandidateReviewError(blocked, 409);
 
+  /* Only retract a memory that is still live. One that a newer memory has
+     since replaced keeps its supersededBy, so the audit trail stays true. */
   const memoryId = (existing.decision as { id: string }).id;
-  const retracted = await updateMemory(userId, memoryId, {
-    status: 'invalid',
-    supersededBy: 'dashboard',
-  });
-  if (retracted) await syncMentionEdges(userId, memoryId, []).catch(() => {});
+  const memory = await getMemory(userId, memoryId);
+  if (memory?.status === 'active') {
+    await updateMemory(userId, memoryId, { status: 'invalid', supersededBy: 'dashboard' });
+    await syncMentionEdges(userId, memoryId, []).catch(() => {});
+  }
 
   const result = await transitionMemoryCandidate(userId, id, 'approved', 'rejected');
   if (!result.candidate) throw new CandidateReviewError('No such memory candidate.', 404);

@@ -94,3 +94,11 @@ test('leaves an ambiguous typo uncorrected rather than guessing', () => {
   ];
   assert.deepEqual(rankMemories(rows, 'tokem', { limit: 3, asOfMs: NOW }), []);
 });
+
+test('spelling-variant questions reach the locale decision', () => {
+  const rows = [
+    memory('i18n', 'User-facing copy is British English.'),
+    memory('ui', 'Buttons use the brand palette.'),
+  ];
+  assert.equal(rankMemories(rows, 'should I write color or colour', { limit: 3, asOfMs: NOW })[0]?.$id, 'i18n');
+});

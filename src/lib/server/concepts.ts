@@ -71,6 +71,10 @@ const CLUSTERS: readonly (readonly string[])[] = [
   // conventions
   ['convention', 'style', 'pattern', 'standard', 'guideline', 'rule',
    'practice', 'preference', 'structure', 'naming', 'architecture'],
+  // locale — spelling variants are how the question usually arrives:
+  // "color or colour" means "which English", not a CSS property.
+  ['i18n', 'l10n', 'locale', 'localization', 'localisation', 'translation',
+   'english', 'british', 'american', 'spelling', 'color', 'colour'],
   // errors
   ['error', 'errors', 'exception', 'failure', 'bug', 'crash', 'logging',
    'monitoring', 'observability', 'tracing', 'debug', 'retry', 'timeout'],

@@ -346,3 +346,43 @@ test('malformed metadata never breaks explanations', () => {
   assert.ok(explanation.reasons.includes('lexical'));
   assert.equal(explanation.provenance, undefined);
 });
+
+/* A query the corpus only half knows still answers, but says so. */
+test('flags recall as partial when most of the query is unknown to the corpus', () => {
+  const rows = [
+    explainable('cache', 'Redis caches API responses for five minutes.', 1),
+    explainable('db', 'Postgres is the production database.', 1),
+    explainable('deploy', 'Production deploys to Vercel in the Singapore region.', 1),
+    explainable('tests', 'Testing uses Vitest with colocated test files.', 1),
+  ];
+  const near = rankMemoriesWithExplanations(rows, 'how many redis cluster shards', {
+    limit: 3,
+    asOfMs: NOW,
+  });
+  assert.equal(near[0]?.memory.$id, 'cache');
+  assert.ok(near[0].explanation.reasons.includes('partial'));
+
+  const covered = rankMemoriesWithExplanations(rows, 'redis cache', { limit: 3, asOfMs: NOW });
+  assert.equal(covered[0]?.memory.$id, 'cache');
+  assert.ok(!covered[0].explanation.reasons.includes('partial'));
+});
+
+test('partial is appended to the stable reason vocabulary, never inserted', () => {
+  assert.equal(RECALL_REASONS.at(-1), 'partial');
+  assert.deepEqual(RECALL_REASONS.slice(0, 8), [
+    'lexical',
+    'concept',
+    'entity',
+    'recent',
+    'evidence',
+    'user-confirmed',
+    'high-confidence',
+    'newest',
+  ]);
+});
+
+test('newest-first fallback is never partial', () => {
+  const rows = [explainable('a', 'Some fact.', 1)];
+  const [hit] = rankMemoriesWithExplanations(rows, 'how do we handle this', { limit: 1, asOfMs: NOW });
+  assert.ok(!hit.explanation.reasons.includes('partial'));
+});

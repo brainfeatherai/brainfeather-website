@@ -114,6 +114,7 @@ export type RepoMemBenchReport = {
   generalization: {
     dev: SplitMetrics;
     holdout: SplitMetrics;
+    holdout2: SplitMetrics;
   };
   capabilities: {
     branchIsolation: {
@@ -572,7 +573,16 @@ export function baselinePasses(report: RepoMemBenchReport): boolean {
     report.generalization.dev.hitAtThree >= floors['dev.hitAtThree'] &&
     report.generalization.dev.abstentionAccuracy >= floors['dev.abstentionAccuracy'] &&
     report.generalization.holdout.hitAtThree >= floors['holdout.hitAtThree'] &&
-    report.generalization.holdout.abstentionAccuracy >= floors['holdout.abstentionAccuracy'];
+    report.generalization.holdout.abstentionAccuracy >= floors['holdout.abstentionAccuracy'] &&
+    report.generalization.holdout2.hitAtThree >= floors['holdout2.hitAtThree'] &&
+    report.generalization.holdout2.abstentionAccuracy >= floors['holdout2.abstentionAccuracy'] &&
+    report.generalization.dev.nearTopicFlagged >= floors['dev.nearTopicFlagged'] &&
+    /* Ceilings: a `partial` flag on good answers teaches agents to ignore it. */
+    (['dev', 'holdout', 'holdout2'] as const).every(
+      (split) =>
+        report.generalization[split].partialOnCorrectRate <=
+        generalizationArtifact.ceilings[`${split}.partialOnCorrectRate`],
+    );
 
   return (
     report.benchmark === generalizationArtifact.benchmark &&

@@ -8,7 +8,14 @@ import {
 import { detectMemoryType, junkReason, type StoredFact } from './memory-policy.ts';
 import { extractEntities } from './entities.ts';
 import { listActive } from './memory-store.ts';
-import { queueMemoryCandidate } from './candidate-store.ts';
+import {
+  listMemoryCandidates,
+  queueMemoryCandidate,
+  type MemoryCandidateDoc,
+} from './candidate-store.ts';
+import { autoApproveMemoryCandidate } from './candidate-review.ts';
+import { SESSION_GAP_MS } from '../auto-approval.ts';
+import { reportServerError } from './report-error.ts';
 import { recordCapture, type AgentSession } from './session.ts';
 
 export type CaptureCandidate = {
@@ -183,6 +190,41 @@ export function extractActivityFacts(activity: string): CaptureCandidate[] {
   return facts.filter((fact) => kept.has(fact));
 }
 
+const sameText = (a: string, b: string) =>
+  a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/* A fact captured again in a separate session is corroborated: the agent
+   arrived at it twice, independently. Hooks start a new server session per
+   process, so "separate" also requires a real gap in time, otherwise two
+   events from one conversation would corroborate each other. */
+export function earlierSessionCapture(
+  fact: { content: string; projectId?: string; branch?: string; taskId?: string },
+  pending: readonly Pick<
+    MemoryCandidateDoc,
+    '$id' | '$createdAt' | 'content' | 'projectId' | 'branch' | 'taskId' | 'status'
+  >[],
+  opts: { excludeId: string; nowMs?: number },
+): string | undefined {
+  /* `pending` also carries rejected rows, which veto instead of corroborate. */
+  const nowMs = opts.nowMs ?? Date.now();
+  const sameScope = (row: (typeof pending)[number]) =>
+    (row.projectId ?? '') === (fact.projectId ?? '') &&
+    (row.branch ?? '') === (fact.branch ?? '') &&
+    (row.taskId ?? '') === (fact.taskId ?? '');
+  /* Once the owner rejected or undid this fact, only a person may add it. */
+  if (pending.some((row) => row.status === 'rejected' && sameScope(row) && sameText(row.content, fact.content))) {
+    return undefined;
+  }
+  return pending.find(
+    (row) =>
+      row.status === 'pending' &&
+      row.$id !== opts.excludeId &&
+      sameScope(row) &&
+      nowMs - Date.parse(row.$createdAt) >= SESSION_GAP_MS &&
+      sameText(row.content, fact.content),
+  )?.$id;
+}
+
 export async function captureFromActivity(
   userId: string,
   input: {
@@ -197,6 +239,7 @@ export async function captureFromActivity(
   const facts = extractActivityFacts(input.activity);
   const decisions: Decision[] = [];
   let queued = 0;
+  let saved = 0;
   let duplicates = 0;
 
   /* Compare against what the user already has before queueing, the same
@@ -214,6 +257,23 @@ export async function captureFromActivity(
       known = [];
     }
   }
+
+  /* Read once, only when there is something to compare. Best effort like
+     the known-memory lookup: without it, facts simply wait for review. */
+  let pending: MemoryCandidateDoc[] | undefined;
+  const pendingCandidates = async () => {
+    if (pending) return pending;
+    try {
+      const [open, rejected] = await Promise.all([
+        listMemoryCandidates(userId, { status: 'pending', limit: 100 }),
+        listMemoryCandidates(userId, { status: 'rejected', limit: 100 }),
+      ]);
+      pending = [...open, ...rejected];
+    } catch {
+      pending = [];
+    }
+    return pending;
+  };
 
   for (const fact of facts) {
     if (!CATEGORIES.has(fact.category)) continue;
@@ -238,14 +298,47 @@ export async function captureFromActivity(
       },
       input.session?.id,
     );
-    if (result.created) queued++;
+    if (!result.created) {
+      duplicates++;
+      continue;
+    }
+
+    const scope = {
+      content: fact.content,
+      projectId: input.projectId ?? input.session?.projectId,
+      branch: input.branch ?? input.session?.branch,
+      taskId: input.taskId ?? input.session?.taskId,
+    };
+    const earlierId = earlierSessionCapture(scope, await pendingCandidates(), {
+      excludeId: result.candidate.$id,
+    });
+    const decision = earlierId
+      ? await autoApproveMemoryCandidate(userId, result.candidate.$id).catch((error) => {
+          reportServerError(error, {
+            operation: 'memory_candidate.auto_approve',
+            userId,
+            resourceId: result.candidate.$id,
+          });
+          return null;
+        })
+      : null;
+    if (!decision) {
+      queued++;
+      continue;
+    }
+    decisions.push(decision);
+    if (decision.action === 'add') saved++;
     else duplicates++;
+    /* The earlier copy is now known; approving it records a duplicate
+       instead of leaving a stale item in the queue. */
+    await autoApproveMemoryCandidate(userId, earlierId!).catch(() => null);
+    pending = pending?.filter((row) => row.$id !== earlierId);
   }
 
   return {
     candidates: facts.length,
     queued,
-    saved: 0,
+    saved,
     duplicates,
     rejected: 0,
     decisions,

@@ -10,6 +10,7 @@ import {
   type MemoryCandidate,
   type SaveDecision,
 } from "@/lib/api-client";
+import { undoBlocker } from "@/lib/auto-approval";
 import {
   byReviewPriority,
   confidenceBand,
@@ -32,13 +33,16 @@ function CandidateRow({
   candidate,
   onApprove,
   onReject,
+  onUndo,
   busy,
 }: {
   candidate: MemoryCandidate;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onUndo: (id: string) => void;
   busy: boolean;
 }) {
+  const undoable = undoBlocker(candidate) === null;
   const when = new Date(candidate.$createdAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -120,9 +124,21 @@ function CandidateRow({
           </button>
         </div>
       ) : (
-        <p className="mt-3 font-mono text-[9px] uppercase tracking-[0.1em] text-forest/35">
-          {candidate.status}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest/35">
+            {candidate.autoApproved ? "auto-approved · seen in two sessions" : candidate.status}
+          </p>
+          {undoable ? (
+            <button
+              type="button"
+              onClick={() => onUndo(candidate.$id)}
+              disabled={busy}
+              className={`${ICON_BTN} text-forest/45 hover:border-red-400/50 hover:text-red-300`}
+            >
+              Undo
+            </button>
+          ) : null}
+        </div>
       )}
     </li>
   );
@@ -211,10 +227,27 @@ function ReviewView() {
     }
   }
 
+  async function undo(id: string) {
+    setBusyId(id);
+    setError(null);
+    setNotice(null);
+    try {
+      await request(`/memory-candidates/${encodeURIComponent(id)}/undo`, {
+        method: "POST",
+      });
+      setNotice("Undone. The memory was retracted and will not be captured automatically again.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not undo.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <AppShell
       title="Review queue"
-      intro="Approve captured agent facts before they enter recall. Rejected items never become memories."
+      intro="Captured facts wait here until you approve them. A fact captured again in a later session is approved automatically, if it replaces nothing; you can undo that for 7 days from Approved."
     >
       {error ?? sessionError ? (
         <p className="mb-6 rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-[13px] text-red-200">
@@ -267,7 +300,7 @@ function ReviewView() {
                   an API key
                 </Link>{" "}
                 and run <code className="font-mono text-[12px]">npx -y @brainfeather/mcp@1.7.0 init</code>
-                . Inferred facts appear here instead of entering recall.
+                . Inferred facts appear here instead of entering recall, unless a later session captures them again.
               </>
             ) : (
               `No ${status} candidates.`
@@ -287,6 +320,7 @@ function ReviewView() {
               candidate={candidate}
               onApprove={approve}
               onReject={reject}
+              onUndo={undo}
               busy={busyId === candidate.$id}
             />
           ))}

@@ -140,6 +140,9 @@ export type MemoryCandidate = {
   taskId?: string;
   confidence: number;
   status: "pending" | "approved" | "rejected";
+  autoApproved?: boolean;
+  reviewedAt?: string;
+  decision?: SaveDecision;
 };
 
 export type ApiRequest = <T>(path: string, init?: RequestInit) => Promise<T>;

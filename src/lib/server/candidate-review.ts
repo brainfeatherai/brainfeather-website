@@ -6,7 +6,9 @@ import {
   transitionMemoryCandidate,
   type MemoryCandidateDoc,
 } from './candidate-store.ts';
-import { think, type Candidate, type Decision } from './think.ts';
+import { undoBlocker } from '../auto-approval.ts';
+import { getMemory, syncMentionEdges, updateMemory } from './memory-store.ts';
+import { NeedsReview, think, type Candidate, type Decision } from './think.ts';
 
 export class CandidateReviewError extends Error {
   status: 404 | 409;
@@ -106,4 +108,62 @@ export async function rejectMemoryCandidate(
     throw new CandidateReviewError('This candidate is no longer pending.', 409);
   }
   return { candidate: rejected.candidate, idempotent: !rejected.changed };
+}
+
+/* Approve without a person, but only when the save is purely additive.
+   Anything think() would reject, or that would retire an existing memory,
+   is put back in the queue so the owner decides. Returns null in that case. */
+export async function autoApproveMemoryCandidate(
+  userId: string,
+  id: string,
+): Promise<Decision | null> {
+  const claimed = await transitionMemoryCandidate(userId, id, 'pending', 'approved');
+  if (!claimed.candidate || !claimed.changed) return null;
+
+  const release = () =>
+    transitionMemoryCandidate(userId, id, 'approved', 'pending').catch(() => {});
+  try {
+    const decision = await think(userId, candidateForApproval(claimed.candidate), {
+      requireNoSupersede: true,
+    });
+    if (decision.action === 'reject') {
+      await release();
+      return null;
+    }
+    const completed = await completeCandidateApproval(userId, id, decision, { auto: true });
+    if (!completed) throw new Error('Candidate approval state changed before completion.');
+    return decision;
+  } catch (error) {
+    await release();
+    if (error instanceof NeedsReview) return null;
+    throw error;
+  }
+}
+
+/* Undo an auto-approval: retract the memory it created and mark the
+   candidate rejected, so the same fact is never auto-approved again. */
+export async function undoAutoApproval(
+  userId: string,
+  id: string,
+): Promise<{ candidate: MemoryCandidateDoc }> {
+  const existing = await getMemoryCandidate(userId, id);
+  if (!existing) throw new CandidateReviewError('No such memory candidate.', 404);
+  const blocked = undoBlocker(existing);
+  if (blocked) throw new CandidateReviewError(blocked, 409);
+
+  /* Only retract a memory that is still live. One that a newer memory has
+     since replaced keeps its supersededBy, so the audit trail stays true. */
+  const memoryId = (existing.decision as { id: string }).id;
+  const memory = await getMemory(userId, memoryId);
+  if (memory?.status === 'active') {
+    await updateMemory(userId, memoryId, { status: 'invalid', supersededBy: 'dashboard' });
+    await syncMentionEdges(userId, memoryId, []).catch(() => {});
+  }
+
+  const result = await transitionMemoryCandidate(userId, id, 'approved', 'rejected');
+  if (!result.candidate) throw new CandidateReviewError('No such memory candidate.', 404);
+  if (!result.changed && result.candidate.status !== 'rejected') {
+    throw new CandidateReviewError('This candidate is no longer approved.', 409);
+  }
+  return { candidate: result.candidate };
 }

@@ -311,7 +311,7 @@ function Dashboard() {
   return (
     <AppShell
       title="Memories"
-      intro="Approved facts currently in recall. Inferred captures wait in the review queue until you accept them."
+      intro="Approved facts currently in recall. Inferred captures wait in the review queue unless a later session captures them again."
       wide
     >
       {banner ? (

@@ -3,7 +3,7 @@
   "name": "com.brainfeather/mcp",
   "title": "Brainfeather",
   "description": "Long-term memory for AI coding agents: durable project facts, recalled by every MCP client.",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "websiteUrl": "https://brainfeather.com/ai-agent-memory",
   "remotes": [
     {
@@ -28,7 +28,7 @@
     {
       "registryType": "npm",
       "identifier": "@brainfeather/mcp",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "transport": {
         "type": "stdio"
       },

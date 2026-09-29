@@ -179,7 +179,7 @@ export default function AgentMemoryPage() {
       <p className={P}>
         Testers connect with an API key and run{" "}
         <code className="rounded bg-paper-dim px-1.5 py-0.5 font-mono text-[13px] text-forest">
-          npx -y @brainfeather/mcp@1.7.0 init
+          npx -y @brainfeather/mcp@1.8.0 init
         </code>{" "}
         once, which sets up automatic recall in Claude Code, Cursor and OpenCode.
       </p>

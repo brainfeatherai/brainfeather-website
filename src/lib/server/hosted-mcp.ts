@@ -30,7 +30,7 @@ export const HOSTED_MCP_CORS = {
    descriptions alone are easy for an agent to skip. */
 /* Matches the current @brainfeather/mcp release so hosts and directories
    report one version for both transports. */
-export const HOSTED_MCP_VERSION = '1.7.0';
+export const HOSTED_MCP_VERSION = '1.8.0';
 
 export const HOSTED_MCP_INSTRUCTIONS =
   'Brainfeather is long-term memory for this repository. At the start of each task, call get_context before writing code. ' +

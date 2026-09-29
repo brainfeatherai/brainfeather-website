@@ -35,6 +35,32 @@ test('joins two-word spellings of concept terms', () => {
   assert.ok(!searchTokens('write to the audit log').includes('login'));
 });
 
+test('drops modal verbs, which carry no topic', () => {
+  assert.deepEqual(searchTokens('where should I put an API token'), ['put', 'api', 'token']);
+  assert.deepEqual(searchTokens('who can access admin pages'), ['access', 'admin', 'pages']);
+});
+
+test('joins "pull request" into the pr concept term', () => {
+  assert.ok(searchTokens('prefer small pull requests').includes('pr'));
+  assert.ok(searchTokens('how big should a PR be').includes('pr'));
+  /* `pr` is a whole-word term: it must not prefix-match `prefer`. */
+  assert.equal(termMatchesToken('prefer', 'pr'), false);
+});
+
+test('an API token question recalls where secrets are kept', () => {
+  const rows = [
+    memory('secrets', 'Secrets live in Vercel environment variables, never in the repo.'),
+    memory('cache', 'Redis caches API responses for five minutes.'),
+  ];
+  /* Before `token` joined the security cluster the secrets memory was
+     unreachable. Order is not asserted: the cache row literally says
+     "API", and a literal match outranks a concept one by design. */
+  const ids = rankMemories(rows, 'where should I put an API token', { limit: 3, asOfMs: NOW }).map(
+    ({ $id }) => $id,
+  );
+  assert.ok(ids.includes('secrets'));
+});
+
 test('maps past tenses onto -ing cluster terms', () => {
   assert.deepEqual(searchTokens('hosted'), ['hosting']);
   assert.deepEqual(searchTokens('logged'), ['logging']);

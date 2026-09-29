@@ -2,11 +2,11 @@
   "benchmark": "0.4.0",
   "baseline": "brainfeather-1.5.2",
   "extends": "negative-query-abstention.json",
-  "note": "Floors, not targets: a split may improve freely but must not fall below these. Measured after the 0.4.0 ranking fixes (short-term exact matching, -ing stems, two-word phrases, one-edit typo correction) and round 1 (half mass credit for sibling-only terms). The holdout split was written before each fix and was not tuned against.",
+  "note": "Floors, not targets: a split may improve freely but must not fall below these. Measured after the 0.4.0 ranking fixes (short-term exact matching, -ing stems, two-word phrases, one-edit typo correction) round 1 (half mass credit for sibling-only terms) and round 3 (modal stopwords, pull request -> pr, token as a secret). The holdout split was written before each fix and was not tuned against.",
   "floors": {
-    "dev.hitAtThree": 0.769,
+    "dev.hitAtThree": 0.923,
     "dev.abstentionAccuracy": 1,
-    "holdout.hitAtThree": 0.789,
+    "holdout.hitAtThree": 0.842,
     "holdout.abstentionAccuracy": 0.666
   },
   "targets": {
@@ -35,6 +35,24 @@
         "holdout.abstentionAccuracy": 0.667
       },
       "tradeoff": "ho-para-schema ('how are schema changes applied') now abstains. It has the same shape as the negatives the fix targets: one sibling-only term and two unknown ones. Telling generic words ('changes', 'applied') from topical ones ('streaming', 'interceptors') would need a curated word list, so the floor was lowered to the measured value rather than fitting vocabulary. Wrong context is costlier than no context for a coding agent."
+    },
+    {
+      "version": "0.4.0 round 3",
+      "change": "Modal verbs are stopwords; 'pull request' joins to a pr term in a new code-review cluster; token and credentials also sit in the security cluster.",
+      "diagnosedOn": ["dev-para-env", "dev-para-pr"],
+      "before": {
+        "dev.hitAtThree": 0.769,
+        "dev.falseAbstentionRate": 0.154,
+        "holdout.hitAtThree": 0.789,
+        "holdout.falseAbstentionRate": 0.211
+      },
+      "after": {
+        "dev.hitAtThree": 0.923,
+        "dev.falseAbstentionRate": 0.077,
+        "holdout.hitAtThree": 0.842,
+        "holdout.falseAbstentionRate": 0.158
+      },
+      "holdoutEffect": "ho-para-admin ('who can access admin pages') now recalls because 'can' no longer counts as unknown mass. The stopword class was chosen from dev ('should'), but holdout query tokenization was printed during diagnosis, so this gain is not fully blind."
     }
   ]
 }

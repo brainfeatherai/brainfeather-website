@@ -75,8 +75,12 @@ const CLUSTERS: readonly (readonly string[])[] = [
   ['error', 'errors', 'exception', 'failure', 'bug', 'crash', 'logging',
    'monitoring', 'observability', 'tracing', 'debug', 'retry', 'timeout'],
   // security and encryption
+  // 'token' and 'credentials' also sit in identity: an API token is a
+  // secret to store as much as a login artefact.
   ['security', 'secure', 'encrypt', 'cipher', 'ciphertext', 'cryptography',
-   'keyring', 'kms', 'secret', 'secrets'],
+   'keyring', 'kms', 'secret', 'secrets', 'token', 'credentials'],
+  // code review — 'pr' is what "pull request" joins to (see PHRASES).
+  ['pr', 'review', 'reviewer', 'merge'],
   // performance
   ['performance', 'latency', 'slow', 'speed', 'optimization', 'cache',
    'caching', 'memoize', 'throughput', 'scale', 'scaling'],
@@ -133,6 +137,7 @@ const PHRASES: readonly [RegExp, string][] = [
   [/\blog\s+in\b/g, 'login'],
   [/\bsign\s+in\b/g, 'signin'],
   [/\bsign\s+up\b/g, 'signup'],
+  [/\bpull\s+requests?\b/g, 'pr'],
 ];
 
 /* Words that match everything and therefore rank nothing. Dropped from
@@ -144,6 +149,9 @@ const STOP = new Set([
   'when', 'where', 'why', 'we', 'i', 'you', 'they', 'it', 'this', 'that',
   'for', 'to', 'of', 'in', 'on', 'at', 'by', 'with', 'from', 'about',
   'our', 'my', 'use', 'using', 'used', 'handle', 'handling', 'get', 'set',
+  /* Modal verbs carry no topic. Kept as terms they added unmatched IDF
+     mass, so "where should I put an API token" read as mostly unknown. */
+  'can', 'could', 'should', 'would', 'will', 'shall', 'may', 'might', 'must',
 ]);
 
 export type ExpandedQuery = {
